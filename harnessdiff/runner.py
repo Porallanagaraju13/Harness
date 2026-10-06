@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from harnessdiff.agent_loop import AgentLoop
 from harnessdiff.config import HarnessConfig
@@ -229,11 +229,22 @@ class AblationRunner:
     Runs ablation study: adds layers one at a time.
 
     Measures incremental impact of each layer.
+    Writes a self-contained dataset under output_dir (JSON + traces).
+    Use `harnessdiff publish-results` to copy datasets into the dashboard.
     """
 
-    def __init__(self, model: ModelProvider, output_dir: Path):
+    def __init__(
+        self,
+        model: ModelProvider,
+        output_dir: Path,
+        model_spec: str = "mock",
+        model_meta: Optional[Dict[str, Any]] = None,
+    ):
         self.runner = TaskRunner(model, output_dir)
         self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.model_spec = model_spec
+        self.model_meta = model_meta or _model_meta_from_spec(model_spec)
 
     def run_ablation(self) -> Dict[str, Any]:
         """
@@ -242,8 +253,17 @@ class AblationRunner:
         Returns results dict with metrics for each configuration.
         """
         print("Starting ablation study...")
+        from harnessdiff.publish import dataset_id_from_path
+        from harnessdiff.sanitize import scrub_value
 
-        results = {"timestamp": datetime.now().isoformat(), "runs": []}
+        dataset_id = dataset_id_from_path(self.output_dir)
+
+        results = {
+            "timestamp": datetime.now().isoformat(),
+            "dataset_id": dataset_id,
+            "model": self.model_meta,
+            "runs": [],
+        }
 
         # Baseline: no harness
         print("\n[1/7] Running baseline (no harness)...")
@@ -284,16 +304,15 @@ class AblationRunner:
         # Aggregate results
         results["summary"] = self._aggregate_results(results["runs"])
         results["task_layer_matrix"] = self._build_task_layer_matrix(results["runs"])
+        results = scrub_value(results)
 
-        # Save results
+        # Save self-contained dataset under output_dir
         results_file = self.output_dir / "ablation_results.json"
-        with open(results_file, "w") as f:
+        with open(results_file, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
 
-        # Mirror into web/public for the static dashboard (no secrets)
-        self._sync_web_public(results_file)
-
         print(f"\nResults saved to {results_file}")
+        print("Publish to the dashboard with: harnessdiff publish-results")
 
         return results
 
@@ -338,20 +357,49 @@ class AblationRunner:
                 matrix.setdefault(task_id, {})[run_id] = bool(task["real_success"])
         return matrix
 
-    def _sync_web_public(self, results_file: Path) -> None:
-        """Copy ablation JSON + baseline/final traces into web/public."""
-        web_public = Path("web/public")
-        if not web_public.exists():
-            return
-        try:
-            shutil.copy2(results_file, web_public / "ablation_results.json")
-            for trace in self.output_dir.glob("baseline_*_trace.jsonl"):
-                shutil.copy2(trace, web_public / trace.name)
-            # Final cumulative run is always layer_verification in the standard ablation
-            for trace in self.output_dir.glob("layer_verification_*_trace.jsonl"):
-                shutil.copy2(trace, web_public / trace.name)
-        except OSError as exc:
-            print(f"Warning: could not sync web/public: {exc}")
+
+def _model_meta_from_spec(spec: str) -> Dict[str, Any]:
+    """Build serializable model metadata (never includes API keys)."""
+    name, _, model_id = spec.partition(":")
+    name = name.strip().lower() or "mock"
+    model_id = model_id.strip() or None
+    if name == "mock":
+        return {
+            "spec": "mock",
+            "provider": "mock",
+            "model_id": "mock",
+            "display_name": "Mock model",
+        }
+    if name == "gemini":
+        mid = model_id or "gemini-3.8-flash"
+        return {
+            "spec": f"gemini:{mid}",
+            "provider": "gemini",
+            "model_id": mid,
+            "display_name": f"Gemini ({mid})",
+        }
+    if name == "openai":
+        mid = model_id or "gpt-4o-mini"
+        return {
+            "spec": f"openai:{mid}",
+            "provider": "openai",
+            "model_id": mid,
+            "display_name": f"OpenAI ({mid})",
+        }
+    if name == "anthropic":
+        mid = model_id or "claude-3-5-sonnet-20241022"
+        return {
+            "spec": f"anthropic:{mid}",
+            "provider": "anthropic",
+            "model_id": mid,
+            "display_name": f"Anthropic ({mid})",
+        }
+    return {
+        "spec": spec,
+        "provider": name,
+        "model_id": model_id or name,
+        "display_name": spec,
+    }
 
 
 def compare_before_after(results: Dict[str, Any]) -> Dict[str, Any]:

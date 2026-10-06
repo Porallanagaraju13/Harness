@@ -1,11 +1,28 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import styles from './page.module.css'
 import TraceViewer from './components/TraceViewer'
 
+interface DatasetInfo {
+  id: string
+  label: string
+  is_mock?: boolean
+  path: string
+  timestamp?: string
+  model?: {
+    spec?: string
+    provider?: string
+    model_id?: string
+    display_name?: string
+  }
+  final_success_rate?: number
+}
+
 interface AblationResults {
   timestamp: string
+  dataset_id?: string
+  model?: DatasetInfo['model']
   runs: Array<{
     run_id: string
     layer_added?: string
@@ -53,27 +70,19 @@ function runLabel(run: AblationResults['runs'][number]) {
 }
 
 export default function Home() {
+  const [datasets, setDatasets] = useState<DatasetInfo[]>([])
+  const [activeId, setActiveId] = useState<string>('mock')
   const [results, setResults] = useState<AblationResults | null>(null)
   const [error, setError] = useState('')
   const [selectedTask, setSelectedTask] = useState<string | null>(null)
   const [traces, setTraces] = useState<Record<string, any>>({})
 
-  useEffect(() => {
-    fetch('/ablation_results.json')
-      .then((res) => {
-        if (!res.ok) throw new Error('missing')
-        return res.json()
-      })
-      .then((data) => {
-        setResults(data)
-        loadTraces(data)
-      })
-      .catch(() => {
-        setError('No results found. Run `harnessdiff ablate` first to generate data.')
-      })
-  }, [])
+  const showToggle = useMemo(
+    () => datasets.some((d) => !d.is_mock) && datasets.length > 1,
+    [datasets]
+  )
 
-  const loadTraces = async (data: AblationResults) => {
+  const loadTraces = useCallback(async (data: AblationResults, basePath: string) => {
     const baselineRun = data.runs.find((r) => r.run_id === 'baseline')
     const fullRun = data.runs[data.runs.length - 1]
     if (!baselineRun || !fullRun) return
@@ -81,8 +90,13 @@ export default function Home() {
     const newTraces: Record<string, any> = {}
     for (const task of baselineRun.tasks) {
       try {
-        const baselineTrace = await fetch(`/baseline_${task.task_id}_trace.jsonl`)
-          .then((res) => res.text())
+        const baselineTrace = await fetch(
+          `${basePath}/baseline_${task.task_id}_trace.jsonl`
+        )
+          .then((res) => {
+            if (!res.ok) throw new Error('missing')
+            return res.text()
+          })
           .then((text) =>
             text
               .trim()
@@ -91,8 +105,13 @@ export default function Home() {
               .map((line) => JSON.parse(line))
           )
 
-        const fullTrace = await fetch(`/${fullRun.run_id}_${task.task_id}_trace.jsonl`)
-          .then((res) => res.text())
+        const fullTrace = await fetch(
+          `${basePath}/${fullRun.run_id}_${task.task_id}_trace.jsonl`
+        )
+          .then((res) => {
+            if (!res.ok) throw new Error('missing')
+            return res.text()
+          })
           .then((text) =>
             text
               .trim()
@@ -111,6 +130,76 @@ export default function Home() {
       }
     }
     setTraces(newTraces)
+  }, [])
+
+  const loadDataset = useCallback(
+    async (ds: DatasetInfo) => {
+      setError('')
+      setSelectedTask(null)
+      setTraces({})
+      setResults(null)
+      try {
+        const res = await fetch(`${ds.path}/ablation_results.json`)
+        if (!res.ok) throw new Error('missing')
+        const data = await res.json()
+        setResults(data)
+        await loadTraces(data, ds.path)
+      } catch {
+        setError(
+          `No results for "${ds.label}". Run ablation and \`harnessdiff publish-results\`.`
+        )
+      }
+    },
+    [loadTraces]
+  )
+
+  useEffect(() => {
+    fetch('/data/index.json')
+      .then((res) => {
+        if (!res.ok) throw new Error('missing index')
+        return res.json()
+      })
+      .then((index) => {
+        const list: DatasetInfo[] = index.datasets || []
+        if (!list.length) throw new Error('empty')
+        setDatasets(list)
+        const preferred =
+          list.find((d) => d.is_mock || d.id === 'mock') || list[0]
+        setActiveId(preferred.id)
+        return loadDataset(preferred)
+      })
+      .catch(() => {
+        // Backward-compat: root-level ablation_results.json
+        fetch('/ablation_results.json')
+          .then((res) => {
+            if (!res.ok) throw new Error('missing')
+            return res.json()
+          })
+          .then(async (data) => {
+            const fallback: DatasetInfo = {
+              id: 'mock',
+              label: 'Mock model',
+              is_mock: true,
+              path: '',
+            }
+            setDatasets([fallback])
+            setActiveId('mock')
+            setResults(data)
+            await loadTraces(data, '')
+          })
+          .catch(() => {
+            setError(
+              'No results found. Run `harnessdiff ablate` then `harnessdiff publish-results`.'
+            )
+          })
+      })
+  }, [loadDataset, loadTraces])
+
+  const onSelectDataset = (id: string) => {
+    const ds = datasets.find((d) => d.id === id)
+    if (!ds) return
+    setActiveId(id)
+    loadDataset(ds)
   }
 
   const headline = useMemo(() => {
@@ -140,7 +229,7 @@ export default function Home() {
     return built
   }, [results])
 
-  if (error) {
+  if (error && !results) {
     return (
       <main className={styles.main}>
         <p className={styles.brandMark}>HarnessDiff</p>
@@ -159,6 +248,10 @@ export default function Home() {
   }
 
   const runIds = results.runs.map((r) => r.run_id)
+  const activeLabel =
+    datasets.find((d) => d.id === activeId)?.label ||
+    results.model?.display_name ||
+    'Mock model'
 
   return (
     <main className={styles.main}>
@@ -218,9 +311,37 @@ export default function Home() {
             </div>
           </section>
 
+          {showToggle && (
+            <div className={styles.datasetToggle} role="tablist" aria-label="Result dataset">
+              {datasets.map((ds) => (
+                <button
+                  key={ds.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={ds.id === activeId}
+                  className={
+                    ds.id === activeId ? styles.datasetActive : styles.datasetIdle
+                  }
+                  onClick={() => onSelectDataset(ds.id)}
+                >
+                  {ds.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <p className={styles.datasetCaption}>
+            Showing results for <strong>{activeLabel}</strong>
+            {results.timestamp
+              ? ` · generated ${new Date(results.timestamp).toLocaleString()}`
+              : ''}
+          </p>
+
           <section className={styles.numbers} aria-label="Headline numbers">
             <div>
-              <strong>{headline.before}% → {headline.after}%</strong>
+              <strong>
+                {headline.before}% → {headline.after}%
+              </strong>
               <span>real success rate</span>
             </div>
             <div>
@@ -232,7 +353,9 @@ export default function Home() {
               <span>false claims caught</span>
             </div>
             <div>
-              <strong>{headline.executedBefore} → {headline.blocked}</strong>
+              <strong>
+                {headline.executedBefore} → {headline.blocked}
+              </strong>
               <span>unsafe executed → blocked</span>
             </div>
           </section>

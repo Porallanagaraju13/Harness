@@ -191,6 +191,49 @@
   font-weight: 600;
 }
 
+.datasetToggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.3rem;
+  margin: 0 0 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.datasetActive,
+.datasetIdle {
+  border: none;
+  border-radius: 999px;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.datasetActive {
+  background: var(--teal);
+  color: #fff;
+}
+
+.datasetIdle {
+  background: transparent;
+  color: var(--ink-soft);
+}
+
+.datasetIdle:hover {
+  color: var(--ink);
+  background: rgba(11, 122, 120, 0.08);
+}
+
+.datasetCaption {
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  margin: 0 0 1.5rem;
+}
+
 .numbers {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real LLM provider support (Gemini, OpenAI, and Anthropic)
 - First-class Gemini provider (default model `gemini-3.8-flash`, `GEMINI_API_KEY`, `HARNESSDIFF_GEMINI_MODEL`)
 - `harnessdiff models --provider gemini` to list live model ids
+- Multi-dataset results: `ablate --output-dir results/<id>` writes self-contained datasets; `publish-results` copies them to `web/public/data/`
+- Dashboard model toggle (Mock vs real-model datasets) when real results are published
+- Trace/result secret scrubbing (API keys and auth headers redacted)
 - Task x layer success matrix showing which layer fixes which task
 - Side-by-side trace viewer in dashboard
 - Complete CLI for running tasks, ablations, and before/after comparisons

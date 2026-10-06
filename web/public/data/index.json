@@ -1,0 +1,18 @@
+{
+  "datasets": [
+    {
+      "id": "mock",
+      "label": "Mock model",
+      "is_mock": true,
+      "path": "/data/mock",
+      "timestamp": "2026-10-06T07:42:24.555548",
+      "model": {
+        "spec": "mock",
+        "provider": "mock",
+        "model_id": "mock",
+        "display_name": "Mock model"
+      },
+      "final_success_rate": 0.8333333333333334
+    }
+  ]
+}

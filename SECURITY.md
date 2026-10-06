@@ -29,7 +29,7 @@ If you discover a security vulnerability in HarnessDiff, please report it by:
 HarnessDiff is designed for research and testing purposes. When using it:
 
 - **Mock Model**: The default mock model is deterministic and safe for offline use
-- **Real LLM Providers**: When using OpenAI or Anthropic APIs, your API keys are only stored in environment variables (never in code or logs)
+When using OpenAI, Anthropic, or Gemini APIs, your API keys are only read from environment variables (never written to code, logs, results JSON, or traces). Trace save and `publish-results` scrub fields and substrings that look like secrets (`api_key`, `Authorization`, Bearer tokens, `AIza…` / `sk-…` keys).
 - **Sandbox Layer**: Demonstrates isolation concepts but is NOT a security boundary for production use
 - **Permissions Layer**: Educational demonstration of approval patterns, not a production access control system
 

@@ -96,15 +96,27 @@ def after(model: str, output_dir: str):
 
 @main.command()
 @click.option("--model", default="mock", help=MODEL_HELP)
-@click.option("--output-dir", default="./results", help="Output directory for results")
+@click.option(
+    "--output-dir",
+    default="./results",
+    help="Output directory for a self-contained dataset (JSON + traces)",
+)
 def ablate(model: str, output_dir: str):
     """Run ablation study: add layers one at a time"""
     console.print("\n[bold magenta]Running ablation study[/bold magenta]")
     console.print("This will run all tasks 7 times, adding one layer each time.\n")
 
+    # Prefer results/<model-id> for non-mock when caller left the default
+    out = Path(output_dir)
+    if model != "mock" and output_dir in ("./results", "results"):
+        _, _, mid = model.partition(":")
+        slug = mid.strip() or model.replace(":", "-")
+        out = Path("results") / slug
+        console.print(f"[dim]Using output dir {out} for model dataset[/dim]\n")
+
     model_provider = _get_model(model)
 
-    ablation = AblationRunner(model_provider, Path(output_dir))
+    ablation = AblationRunner(model_provider, out, model_spec=model)
     results = ablation.run_ablation()
 
     console.print("\n[bold green]Ablation complete![/bold green]\n")
@@ -114,6 +126,55 @@ def ablate(model: str, output_dir: str):
     _print_before_after(comparison)
     if results.get("task_layer_matrix"):
         _print_matrix(results["task_layer_matrix"])
+
+
+@main.command("publish-results")
+@click.option(
+    "--results-root",
+    default="./results",
+    type=click.Path(),
+    help="Root folder containing ablation datasets",
+)
+@click.option(
+    "--web-data",
+    default="./web/public/data",
+    type=click.Path(),
+    help="Dashboard data folder (static export)",
+)
+@click.option(
+    "--dataset",
+    "datasets",
+    multiple=True,
+    help="Optional dataset id(s) to publish (default: all discovered)",
+)
+def publish_results(results_root: str, web_data: str, datasets: tuple):
+    """Copy results/ datasets into web/public/data for the dashboard."""
+    from harnessdiff.publish import publish_datasets
+
+    summary = publish_datasets(
+        results_root=Path(results_root),
+        web_data=Path(web_data),
+        dataset_ids=list(datasets) if datasets else None,
+    )
+    published = summary.get("published") or []
+    if not published:
+        console.print(
+            "[yellow]No datasets found.[/yellow] Run "
+            "`harnessdiff ablate` (mock) or "
+            "`harnessdiff ablate --model gemini:gemini-3.8-flash "
+            "--output-dir results/gemini-3.8-flash` first."
+        )
+        return
+
+    console.print("\n[bold green]Published datasets:[/bold green]\n")
+    table = Table(show_header=True)
+    table.add_column("ID", style="cyan")
+    table.add_column("Label")
+    table.add_column("Path")
+    for entry in published:
+        table.add_row(entry["id"], entry.get("label", ""), entry.get("path", ""))
+    console.print(table)
+    console.print(f"\nIndex written to [cyan]{Path(web_data) / 'index.json'}[/cyan]\n")
 
 
 @main.command("list-tasks")

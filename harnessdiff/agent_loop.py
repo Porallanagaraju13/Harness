@@ -82,10 +82,14 @@ class Trace:
         return lines
 
     def save(self, path: Path):
-        """Save trace to JSONL file"""
-        with open(path, "w") as f:
+        """Save trace to JSONL file with secrets scrubbed."""
+        from harnessdiff.sanitize import scrub_jsonl_line
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             for line in self.to_jsonl():
-                f.write(line + "\n")
+                f.write(scrub_jsonl_line(line) + "\n")
 
 
 class AgentLoop:

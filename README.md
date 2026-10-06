@@ -24,6 +24,28 @@ HarnessDiff is a hands-on lab: the same offline agent runs a fixed task suite wi
 
 **50% → 83.3%** real success. False claims drop; verification catches the rest; permissions stop unsafe deletes.
 
+## Real model results
+
+The dashboard can show multiple ablation datasets side by side (Mock vs Gemini, etc.). Toggle appears only after a real-model dataset is published.
+
+```bash
+# Owner machine (requires GEMINI_API_KEY)
+export GEMINI_API_KEY="your-key"          # Linux/macOS
+# PowerShell: $env:GEMINI_API_KEY="your-key"
+
+harnessdiff ablate --model gemini:gemini-3.8-flash --output-dir results/gemini-3.8-flash
+harnessdiff publish-results
+```
+
+`publish-results` copies every self-contained folder under `results/` into `web/public/data/<id>/` (JSON + scrubbed traces) and writes `web/public/data/index.json`. Traces are scrubbed so API keys and auth headers never ship.
+
+<!-- OWNER: after running locally, paste the Gemini (or other) ablation table below and commit web/public/data/<id>/ -->
+
+| Model | Baseline | Full harness | Notes |
+|---|---:|---:|---|
+| Mock | 50.0% | 83.3% | Committed offline baseline |
+| Gemini `gemini-3.8-flash` | _TBD — run locally_ | _TBD_ | Replace this row after `ablate` + `publish-results` |
+
 ## Quick start
 
 ### Linux / macOS
@@ -31,6 +53,7 @@ HarnessDiff is a hands-on lab: the same offline agent runs a fixed task suite wi
 ```bash
 pip install -e .
 harnessdiff ablate
+harnessdiff publish-results
 harnessdiff list-tasks
 ```
 
@@ -39,13 +62,17 @@ harnessdiff list-tasks
 ```powershell
 pip install -e .
 harnessdiff ablate
+harnessdiff publish-results
 # Optional Gemini:
 $env:GEMINI_API_KEY="your-key"
-harnessdiff ablate --model gemini:gemini-3.8-flash
+harnessdiff ablate --model gemini:gemini-3.8-flash --output-dir results/gemini-3.8-flash
+harnessdiff publish-results
 harnessdiff models --provider gemini
 ```
 
 Mock model is the default and works fully offline. No Docker required.
+
+Each `ablate --output-dir results/<id>` run writes a **self-contained dataset** (results JSON + traces) under that folder. `publish-results` is what the dashboard reads from `web/public/data/`.
 
 ## Dashboard
 
