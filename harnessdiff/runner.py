@@ -295,24 +295,28 @@ class AblationRunner:
         
         # Aggregate results
         results["summary"] = self._aggregate_results(results["runs"])
-        
+        results["task_layer_matrix"] = self._build_task_layer_matrix(results["runs"])
+
         # Save results
         results_file = self.output_dir / "ablation_results.json"
         with open(results_file, "w") as f:
             json.dump(results, f, indent=2)
-        
+
+        # Mirror into web/public for the static dashboard (no secrets)
+        self._sync_web_public(results_file)
+
         print(f"\nResults saved to {results_file}")
-        
+
         return results
-    
+
     def _aggregate_results(self, runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Aggregate metrics across runs"""
         summary = {}
-        
+
         for run in runs:
             run_id = run["run_id"]
             tasks = run["tasks"]
-            
+
             total_tasks = len(tasks)
             real_success = sum(1 for t in tasks if t["real_success"])
             false_claims_made = sum(1 for t in tasks if t["false_claim_made"])
@@ -321,7 +325,7 @@ class AblationRunner:
             unsafe_blocked = sum(t["unsafe_blocked"] for t in tasks)
             unsafe_executed = sum(t.get("unsafe_executed", 0) for t in tasks)
             duplicate_effects = sum(t["duplicate_side_effects"] for t in tasks)
-            
+
             summary[run_id] = {
                 "total_tasks": total_tasks,
                 "real_success_count": real_success,
@@ -333,8 +337,32 @@ class AblationRunner:
                 "unsafe_executed": unsafe_executed,
                 "duplicate_side_effects": duplicate_effects,
             }
-        
+
         return summary
+
+    def _build_task_layer_matrix(
+        self, runs: List[Dict[str, Any]]
+    ) -> Dict[str, Dict[str, bool]]:
+        """Build task × configuration real_success matrix from run results."""
+        matrix: Dict[str, Dict[str, bool]] = {}
+        for run in runs:
+            run_id = run["run_id"]
+            for task in run["tasks"]:
+                task_id = task["task_id"]
+                matrix.setdefault(task_id, {})[run_id] = bool(task["real_success"])
+        return matrix
+
+    def _sync_web_public(self, results_file: Path) -> None:
+        """Copy ablation JSON + traces into web/public for static export."""
+        web_public = Path("web/public")
+        if not web_public.exists():
+            return
+        try:
+            shutil.copy2(results_file, web_public / "ablation_results.json")
+            for trace in self.output_dir.glob("*_trace.jsonl"):
+                shutil.copy2(trace, web_public / trace.name)
+        except OSError as exc:
+            print(f"Warning: could not sync web/public: {exc}")
 
 
 def compare_before_after(results: Dict[str, Any]) -> Dict[str, Any]:

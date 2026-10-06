@@ -69,22 +69,28 @@ Open http://localhost:3000 to see:
 
 ```
 Configuration        Success Rate  False Claims Made  False Claims Caught  Unsafe Executed  Unsafe Blocked
-Baseline (no harness)    50.0%                  5                    0                0               0
-+ Tool Design            50.0%                  5                    0                0               0
-+ Context                50.0%                  5                    0                0               0
-+ Sandbox                41.7%                  6                    0                0               0
-+ Permissions            41.7%                  6                    0                0               1
-+ Retry                  66.7%                  3                    0                0               1
-+ Verification           75.0%                  3                    3                0               1
+Baseline (no harness)    50.0%                  5                    0                2               0
++ Tool Design            58.3%                  4                    0                2               0
++ Context                58.3%                  4                    0                2               0
++ Sandbox                58.3%                  4                    0                2               0
++ Permissions            58.3%                  5                    0                0               1
++ Retry                  83.3%                  2                    0                0               1
++ Verification           83.3%                  2                    2                0               1
 ```
 
 **Key improvements:**
-- Real success rate: **50% → 75%** (+25%)
-- False claims: **5 → 3** (-2 unverified claims)
-- False claims caught: **0 → 3** (verification feedback loop converting failures to fixes)
-- Unsafe actions: **0 executed → 1 blocked** (protection active)
+- Real success rate: **50% → 83.3%** (+33.3%)
+- False claims: **5 → 2** (-3 unverified claims)
+- False claims caught: **0 → 2** (verification feedback loop converting failures to fixes)
+- Unsafe actions: **2 executed → 1 blocked** (protection active)
 
 **Verification feedback loop**: When the agent claims done but verification fails, the system feeds concrete failure evidence back to the agent, allowing bounded fix attempts. This converts caught false claims into real successes.
+
+**Layer-by-layer fixes:**
+- **Tool Design** fixes `overlapping_tools` by filtering 5 ambiguous tools down to 1 clear choice (50.0% → 58.3%)
+- **Permissions** blocks dangerous operations like `rm -rf important_data/` (2 unsafe executed → 0)
+- **Retry** fixes `flaky_tool`, `timeout_retry`, and `duplicate_side_effect` with transparent retries and idempotency (58.3% → 83.3%)
+- **Verification** catches false completion claims and provides concrete feedback for fixes (2 false claims caught)
 ## Task Suite
 
 12 tasks targeting specific failure modes:
@@ -153,6 +159,12 @@ python3 harnessdiff/cli.py list-tasks
 ## License
 
 MIT
+
+## Links
+
+- **Live Demo**: [harnessdiff.vercel.app](https://harnessdiff.vercel.app)
+- **GitHub Repository**: [github.com/Porallanagaraju13/Harness](https://github.com/Porallanagaraju13/Harness)
+- **Author**: [@Porallanagaraju13](https://github.com/Porallanagaraju13) (Nagaraju Poralla)
 
 ## Citation
 

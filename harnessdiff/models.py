@@ -9,7 +9,15 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import json
+import os
 import random
+import urllib.error
+import urllib.request
+
+# Confirmed from the owner's live Gemini models API
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_OPENAI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai/"
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 
 @dataclass
@@ -507,3 +515,173 @@ class AnthropicModel(ModelProvider):
     
     def estimate_tokens(self, text: str) -> int:
         return len(text) // 4
+
+
+class GeminiModel(ModelProvider):
+    """
+    Google Gemini provider via the OpenAI-compatible endpoint.
+
+    Default model id: gemini-3.8-flash (override with HARNESSDIFF_GEMINI_MODEL
+    or --model gemini:<id>). Requires GEMINI_API_KEY.
+    """
+
+    DEFAULT_MODEL = DEFAULT_GEMINI_MODEL
+
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: str = GEMINI_OPENAI_BASE,
+    ):
+        api_key = api_key or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "GEMINI_API_KEY is not set. Export it before using Gemini, "
+                "or use --model mock for offline runs."
+            )
+
+        self.model = (
+            model
+            or os.getenv("HARNESSDIFF_GEMINI_MODEL")
+            or self.DEFAULT_MODEL
+        )
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/") + "/"
+
+        try:
+            import openai
+        except ImportError:
+            raise ImportError("Install openai: pip install 'harnessdiff[llm]'")
+
+        self.client = openai.OpenAI(api_key=api_key, base_url=self.base_url)
+
+    def generate(
+        self,
+        messages: List[Message],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        temperature: float = 0.7,
+    ) -> Message:
+        """Call Gemini via the OpenAI-compatible chat completions API."""
+        msgs = []
+        for msg in messages:
+            m: Dict[str, Any] = {"role": msg.role, "content": msg.content or ""}
+            if msg.tool_calls:
+                m["tool_calls"] = msg.tool_calls
+            if msg.tool_call_id:
+                m["tool_call_id"] = msg.tool_call_id
+            if msg.name:
+                m["name"] = msg.name
+            msgs.append(m)
+
+        kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "messages": msgs,
+            "temperature": temperature,
+        }
+        if tools:
+            kwargs["tools"] = tools
+
+        response = self.client.chat.completions.create(**kwargs)
+        choice = response.choices[0]
+        tool_calls = None
+        if choice.message.tool_calls:
+            tool_calls = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                }
+                for tc in choice.message.tool_calls
+            ]
+
+        return Message(
+            role="assistant",
+            content=choice.message.content or "",
+            tool_calls=tool_calls,
+        )
+
+    def estimate_tokens(self, text: str) -> int:
+        return len(text) // 4
+
+
+def list_gemini_models(api_key: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    List Gemini models from the Generative Language API.
+
+    Returns a list of dicts with id, display_name, and supported methods.
+    Raises ValueError if GEMINI_API_KEY is missing.
+    """
+    api_key = api_key or os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "GEMINI_API_KEY is not set. Cannot list Gemini models without a key."
+        )
+
+    url = f"{GEMINI_API_BASE}/models?key={api_key}&pageSize=100"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gemini models API error {exc.code}: {body}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Gemini models API unreachable: {exc}") from exc
+
+    models = []
+    for item in payload.get("models", []):
+        name = item.get("name", "")
+        model_id = name.split("/", 1)[-1] if name else ""
+        if not model_id:
+            continue
+        methods = item.get("supportedGenerationMethods") or []
+        models.append(
+            {
+                "id": model_id,
+                "display_name": item.get("displayName") or model_id,
+                "supported_methods": methods,
+                "description": item.get("description") or "",
+            }
+        )
+    models.sort(key=lambda m: m["id"])
+    return models
+
+
+def create_model(spec: str = "mock") -> ModelProvider:
+    """
+    Create a model provider from a CLI-style spec.
+
+    Specs:
+      mock
+      openai[:model]
+      anthropic[:model]
+      gemini[:model]
+    """
+    name, _, model_id = spec.partition(":")
+    name = name.strip().lower()
+    model_id = model_id.strip() or None
+
+    if name == "mock":
+        return MockModel()
+    if name == "openai":
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is not set")
+        return OpenAIModel(model=model_id or "gpt-4o-mini", api_key=api_key)
+    if name == "anthropic":
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY is not set")
+        return AnthropicModel(
+            model=model_id or "claude-3-5-sonnet-20241022",
+            api_key=api_key,
+        )
+    if name == "gemini":
+        return GeminiModel(model=model_id)
+    raise ValueError(
+        f"Unknown model '{spec}'. Use mock, openai[:id], anthropic[:id], "
+        f"or gemini[:id] (default Gemini id: {DEFAULT_GEMINI_MODEL})."
+    )
