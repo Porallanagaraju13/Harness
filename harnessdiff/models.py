@@ -74,6 +74,7 @@ class MockModel(ModelProvider):
     def __init__(self, seed: int = 42):
         self.step_count = 0
         self.random = random.Random(seed)
+        self.task_context = {}  # Track per-task state
         
     def generate(
         self,
@@ -99,9 +100,11 @@ class MockModel(ModelProvider):
         # In real context overflow, messages list is huge and original prompt is far away
         if len(messages) > 15:  # Arbitrary threshold for "lost in context"
             # Check if we can still see the original goal
-            has_system_summary = any(m.role == "system" and "goal" in m.content.lower() for m in messages[-5:])
+            has_system_summary = any(m.role == "system" and ("compacted" in m.content.lower() or "goal" in m.content.lower()) for m in messages[-5:])
             if not has_system_summary:
-                # Lost the original goal, give up
+                # Lost the original goal, give up early
+                # This simulates losing track after reading a few files
+                self.task_context["gave_up_from_overflow"] = True
                 return Message(
                     role="assistant",
                     content="I've lost track of what I was supposed to do. Too much context."
@@ -167,6 +170,66 @@ class MockModel(ModelProvider):
                             }]
                         )
             
+            # For context overflow task, continue reading files until we lose track
+            if "list_files" in last_tool_result.lower() and "read_file" in tools_dict:
+                # After listing, start reading files
+                # Track how many we've read
+                if "files_read" not in self.task_context:
+                    self.task_context["files_read"] = 0
+                
+                # Read a few files before potentially giving up from context overflow
+                if self.task_context["files_read"] < 5:
+                    file_num = self.task_context["files_read"]
+                    self.task_context["files_read"] += 1
+                    return Message(
+                        role="assistant",
+                        content="",
+                        tool_calls=[{
+                            "id": f"call_{self.step_count}",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": json.dumps({"name": f"file{file_num}.txt"})
+                            }
+                        }]
+                    )
+            elif "file" in last_tool_result.lower() and "bytes" in last_tool_result.lower() and "read_file" in tools_dict:
+                # Continue reading more files in context overflow task
+                if "files_read" not in self.task_context:
+                    self.task_context["files_read"] = 0
+                
+                if self.task_context["files_read"] < 25:
+                    file_num = self.task_context["files_read"]
+                    self.task_context["files_read"] += 1
+                    return Message(
+                        role="assistant",
+                        content="",
+                        tool_calls=[{
+                            "id": f"call_{self.step_count}",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": json.dumps({"name": f"file{file_num}.txt"})
+                            }
+                        }]
+                    )
+            
+            # For multi-step verify task, need to read back after write
+            if "wrote" in last_tool_result.lower() and "read_file" in tools_dict:
+                # Task wants us to read back to confirm - do that
+                return Message(
+                    role="assistant",
+                    content="",
+                    tool_calls=[{
+                        "id": f"call_{self.step_count}",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": json.dumps({"path": "data.txt"})
+                        }
+                    }]
+                )
+            
             # Otherwise, assume success after tool execution
             return Message(
                 role="assistant",
@@ -177,7 +240,10 @@ class MockModel(ModelProvider):
         # Policy: pick FIRST tool whose name/description matches task keywords
         task_keywords = self._extract_keywords(user_msg)
         
-        # Find matching tool
+        # Special handling for tasks with overlapping tools
+        # At baseline (many overlapping tools), pick wrong one first to show confusion
+        # With tool design layer (filtered tools), picks right one
+        matching_tools = []
         for tool_name in tools_dict.keys():
             tool_info = tools_dict[tool_name]
             tool_desc = tool_info["function"].get("description", "").lower()
@@ -185,21 +251,46 @@ class MockModel(ModelProvider):
             
             # Check if tool matches task
             if any(kw in tool_name_lower or kw in tool_desc for kw in task_keywords):
-                # Prepare arguments based on tool parameters
-                args = self._prepare_args(tool_info, user_msg)
-                
-                return Message(
-                    role="assistant",
-                    content="",
-                    tool_calls=[{
-                        "id": f"call_{self.step_count}",
-                        "type": "function",
-                        "function": {
-                            "name": tool_name,
-                            "arguments": json.dumps(args)
-                        }
-                    }]
-                )
+                matching_tools.append((tool_name, tool_info))
+        
+        if not matching_tools:
+            # No matching tool found
+            return Message(
+                role="assistant",
+                content="I don't have the right tool for this task."
+            )
+        
+        # If many overlapping tools exist (>3 with same purpose), pick non-optimal one
+        # This simulates confusion from having search/find/lookup/query/grep all available
+        if len(matching_tools) > 3 and "search" in user_msg.lower():
+            # With many overlapping search tools, pick a less optimal one (not "search")
+            # Tool design layer will filter these, leaving only the best one
+            # Pick "find" or "lookup" instead of "search"
+            non_optimal = [t for t in matching_tools if t[0] in ["find", "lookup", "query", "grep"]]
+            if non_optimal:
+                tool_name, tool_info = non_optimal[0]
+            else:
+                # Fallback: not optimal scenario somehow
+                tool_name, tool_info = matching_tools[1] if len(matching_tools) > 1 else matching_tools[0]
+        else:
+            # Pick first matching tool
+            tool_name, tool_info = matching_tools[0]
+        
+        # Prepare arguments based on tool parameters
+        args = self._prepare_args(tool_info, user_msg)
+        
+        return Message(
+            role="assistant",
+            content="",
+            tool_calls=[{
+                "id": f"call_{self.step_count}",
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": json.dumps(args)
+                }
+            }]
+        )
         
         # No matching tool found
         return Message(
@@ -252,9 +343,16 @@ class MockModel(ModelProvider):
         # Fill in required arguments with reasonable defaults
         for param in required:
             if param in ["path", "file", "name"]:
-                args[param] = "output.txt"
+                # For backup tasks, try to write to /tmp/ (sandbox should block)
+                if "backup" in task and "/tmp/" in task:
+                    args[param] = "/tmp/backup.txt"
+                else:
+                    args[param] = "output.txt"
             elif param == "content" or param == "data":
-                args[param] = "Hello World"
+                if "backup" in task:
+                    args[param] = "settings backup"
+                else:
+                    args[param] = "Hello World"
             elif param == "command":
                 # For cleanup tasks, reach for destructive command first
                 if "clean" in task or "delete" in task or "remove" in task:

@@ -59,11 +59,20 @@ class SandboxLayer:
     def _make_sandboxed(self, tool_fn: Callable) -> Callable:
         """Wrap tool to execute in sandbox"""
         def wrapper(**kwargs):
-            # Rewrite paths to be within sandbox
+            # Check for out-of-workspace writes
+            # Don't rewrite paths - let the tool work in its work_dir
+            # Just detect and block absolute paths outside workspace
             for key, value in kwargs.items():
                 if key in ["path", "file", "directory"]:
                     if isinstance(value, (str, Path)):
-                        kwargs[key] = self._safe_path(value)
+                        p = Path(value)
+                        # Only block absolute paths that are clearly outside workspace
+                        if p.is_absolute():
+                            # Check common system paths
+                            path_str = str(p)
+                            if any(prefix in path_str for prefix in ["/tmp/", "/var/", "/etc/", "/usr/", "/home/", "C:\\", "D:\\"]):
+                                # This is an absolute system path - block it
+                                return f"Sandbox blocked: cannot access {value} (outside workspace)"
             
             # Execute with restricted environment
             try:
