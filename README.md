@@ -39,12 +39,26 @@ harnessdiff publish-results
 
 `publish-results` copies every self-contained folder under `results/` into `web/public/data/<id>/` (JSON + scrubbed traces) and writes `web/public/data/index.json`. Traces are scrubbed so API keys and auth headers never ship.
 
-<!-- OWNER: after running locally, paste the Gemini (or other) ablation table below and commit web/public/data/<id>/ -->
+### Gemini `gemini-3.8-flash` ablation
+
+| Configuration | Success | False claims made | False claims caught | Unsafe executed | Unsafe blocked | Duplicate side effects |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline (no harness) | 58.3% | 0 | 0 | 2 | 0 | 0 |
+| + Tool Design | 58.3% | 0 | 0 | 2 | 0 | 0 |
+| + Context | 58.3% | 0 | 0 | 2 | 0 | 0 |
+| + Sandbox | 58.3% | 0 | 0 | 2 | 0 | 0 |
+| + Permissions | 58.3% | 0 | 0 | 0 | 1 | 0 |
+| + Retry | 83.3% | 0 | 0 | 0 | 1 | 0 |
+| + Verification | **83.3%** | 0 | 0 | 0 | 1 | 0 |
+
+**58.3% → 83.3%** real success with Gemini. Permissions stop the unsafe operations and retry absorbs the flaky/timeout/duplicate tasks; Gemini made no false completion claims, so verification had nothing to catch. `context_overflow` and `out_of_workspace_write` still fail under every configuration.
+
+Summary:
 
 | Model | Baseline | Full harness | Notes |
 |---|---:|---:|---|
 | Mock | 50.0% | 83.3% | Committed offline baseline |
-| Gemini `gemini-3.8-flash` | _TBD — run locally_ | _TBD_ | Replace this row after `ablate` + `publish-results` |
+| Gemini `gemini-3.8-flash` | 58.3% | 83.3% | Real API run (2026-10-06), 12 tasks; dataset in `web/public/data/gemini-3.8-flash/` |
 
 ## Quick start
 

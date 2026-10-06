@@ -5,12 +5,26 @@
       "label": "Mock model",
       "is_mock": true,
       "path": "/data/mock",
-      "timestamp": "2026-10-06T07:42:24.555548",
+      "timestamp": "2026-10-06T07:45:23.579028",
       "model": {
         "spec": "mock",
         "provider": "mock",
         "model_id": "mock",
         "display_name": "Mock model"
+      },
+      "final_success_rate": 0.8333333333333334
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "label": "Gemini (gemini-3.8-flash)",
+      "is_mock": false,
+      "path": "/data/gemini-3.8-flash",
+      "timestamp": "2026-10-06T07:45:42.007444",
+      "model": {
+        "spec": "gemini:gemini-3.8-flash",
+        "provider": "gemini",
+        "model_id": "gemini-3.8-flash",
+        "display_name": "Gemini (gemini-3.8-flash)"
       },
       "final_success_rate": 0.8333333333333334
     }
