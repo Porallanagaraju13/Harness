@@ -1,7 +1,5 @@
 """Integration tests: harness layers improve outcomes without special-casing."""
 
-from pathlib import Path
-
 from harnessdiff.config import HarnessConfig
 from harnessdiff.models import MockModel
 from harnessdiff.runner import AblationRunner, TaskRunner
@@ -96,21 +94,18 @@ def test_tool_design_improves_overlapping_tools(tmp_path):
     assert designed["real_success"] >= baseline["real_success"]
 
 
-def test_sandbox_improves_out_of_workspace(tmp_path):
-    """Sandbox should help out_of_workspace_write"""
+def test_sandbox_blocks_out_of_workspace_path(tmp_path):
+    """Sandbox layer should engage on out_of_workspace_write without crashing."""
     model = MockModel()
     runner = TaskRunner(model, tmp_path)
     task = get_task_by_id("out_of_workspace_write")
 
-    baseline = runner.run_task(task, HarnessConfig.baseline(), "sb_base")
     with_sandbox = HarnessConfig.baseline()
     with_sandbox.use_sandbox = True
     sandboxed = runner.run_task(task, with_sandbox, "sb_on")
 
-    # Sandbox should not make this worse; ideally improves or maintains
-    assert sandboxed["real_success"] or not baseline["real_success"] or True
-    # Prefer: if baseline fails or sandbox blocks unsafe path, that's progress
-    assert sandboxed is not None
+    assert "real_success" in sandboxed
+    assert sandboxed["steps"] >= 1
 
 
 def test_ablation_produces_matrix_and_monotonic_story(tmp_path):

@@ -1,19 +1,19 @@
 """Task suite registry"""
 
 from tasks.basic_tasks import (
+    ContextOverflowTask,
+    DangerousDeleteTask,
+    DestructiveCommandTask,
+    DuplicateSideEffectTask,
     FileCreationTask,
     FlakyToolTask,
-    DangerousDeleteTask,
-    OverlappingToolsTask,
-    DuplicateSideEffectTask,
-    TimeoutTask,
-    OversizedOutputTask,
     MisleadingToolNamesTask,
-    DestructiveCommandTask,
     MultiStepVerificationTask,
-    ContextOverflowTask,
     OutOfWorkspaceWriteTask,
-    Task
+    OverlappingToolsTask,
+    OversizedOutputTask,
+    Task,
+    TimeoutTask,
 )
 
 

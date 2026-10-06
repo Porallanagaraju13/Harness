@@ -174,7 +174,7 @@ def models_cmd(provider: str):
         )
         console.print(
             "Set GEMINI_API_KEY to list live models. "
-            f"Override default with HARNESSDIFF_GEMINI_MODEL or --model gemini:<id>."
+            "Override default with HARNESSDIFF_GEMINI_MODEL or --model gemini:<id>."
         )
         sys.exit(0)
     except RuntimeError as exc:
@@ -195,12 +195,8 @@ def models_cmd(provider: str):
         table.add_row(label, m.get("display_name", ""), generate)
 
     console.print(table)
-    console.print(
-        f"\nUse with: [bold]harnessdiff ablate --model gemini:{default}[/bold]"
-    )
-    console.print(
-        "Env: GEMINI_API_KEY required; HARNESSDIFF_GEMINI_MODEL overrides default id.\n"
-    )
+    console.print(f"\nUse with: [bold]harnessdiff ablate --model gemini:{default}[/bold]")
+    console.print("Env: GEMINI_API_KEY required; HARNESSDIFF_GEMINI_MODEL overrides default id.\n")
 
 
 def _get_model(model_name: str):
@@ -272,9 +268,7 @@ def _print_ablation_summary(results):
         else:
             name = run_id
 
-        table.add_row(
-            name, success_rate, false_made, false_caught, unsafe_executed, unsafe_blocked
-        )
+        table.add_row(name, success_rate, false_made, false_caught, unsafe_executed, unsafe_blocked)
 
     console.print(table)
     console.print()

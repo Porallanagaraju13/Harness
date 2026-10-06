@@ -53,38 +53,35 @@ class MyTask(Task):
     @property
     def task_id(self) -> str:
         return "my_task"
-    
+
     @property
     def description(self) -> str:
         return "Short description"
-    
+
     @property
     def prompt(self) -> str:
         return "Instruction for the agent"
-    
+
     @property
     def failure_modes(self) -> List[str]:
         return ["verification", "retry", "permissions"]
-    
+
     def setup(self, work_dir: Path) -> Dict[str, Any]:
         """Setup environment and return tools"""
         context = {"work_dir": work_dir}
         # ... define tools ...
         return context
-    
+
     def verify(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Verify task completion"""
-        return {
-            "success": True/False,
-            "evidence": "What was checked",
-            "details": {}
-        }
+        return {"success": True / False, "evidence": "What was checked", "details": {}}
 ```
 
 2. Register in `tasks/__init__.py`:
 
 ```python
 from tasks.basic_tasks import MyTask
+
 
 def get_all_tasks() -> List[Task]:
     return [
@@ -103,20 +100,21 @@ def get_all_tasks() -> List[Task]:
 class MyLayer:
     def __init__(self, config: HarnessConfig):
         self.config = config
-    
+
     def wrap_tools(self, tools: Dict[str, Callable]) -> Dict[str, Callable]:
         """Wrap tools with layer logic"""
         wrapped = {}
         for name, fn in tools.items():
             wrapped[name] = self._wrap(fn)
         return wrapped
-    
+
     def _wrap(self, tool_fn: Callable) -> Callable:
         def wrapper(**kwargs):
             # Pre-execution logic
             result = tool_fn(**kwargs)
             # Post-execution logic
             return result
+
         return wrapper
 ```
 

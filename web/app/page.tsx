@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import styles from './page.module.css'
 import TraceViewer from './components/TraceViewer'
 
@@ -17,304 +17,358 @@ interface AblationResults {
       false_claim_made: boolean
       false_claim_caught: boolean
       steps: number
-      verification: any
+      verification: { evidence?: string }
     }>
   }>
-  summary: Record<string, {
-    total_tasks: number
-    real_success_count: number
-    real_success_rate: number
-    false_claims_made: number
-    false_claims_caught: number
-    unsafe_attempts: number
-    unsafe_blocked: number
-  }>
+  summary: Record<
+    string,
+    {
+      total_tasks: number
+      real_success_count: number
+      real_success_rate: number
+      false_claims_made: number
+      false_claims_caught: number
+      unsafe_attempts: number
+      unsafe_blocked: number
+      unsafe_executed?: number
+    }
+  >
+  task_layer_matrix?: Record<string, Record<string, boolean>>
+}
+
+const LAYER_LABELS: Record<string, string> = {
+  baseline: 'Baseline',
+  tool_design: 'Tool Design',
+  context: 'Context',
+  sandbox: 'Sandbox',
+  permissions: 'Permissions',
+  retry: 'Retry',
+  verification: 'Verification',
+}
+
+function runLabel(run: AblationResults['runs'][number]) {
+  if (run.run_id === 'baseline') return 'Baseline (no harness)'
+  const key = run.layer_added || run.run_id.replace('layer_', '')
+  return `+ ${LAYER_LABELS[key] || key.replace(/_/g, ' ')}`
 }
 
 export default function Home() {
   const [results, setResults] = useState<AblationResults | null>(null)
-  const [error, setError] = useState<string>('')
+  const [error, setError] = useState('')
   const [selectedTask, setSelectedTask] = useState<string | null>(null)
   const [traces, setTraces] = useState<Record<string, any>>({})
 
   useEffect(() => {
-    // Load results
     fetch('/ablation_results.json')
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => {
+        if (!res.ok) throw new Error('missing')
+        return res.json()
+      })
+      .then((data) => {
         setResults(data)
-        // Load traces for all tasks
         loadTraces(data)
       })
-      .catch(err => {
+      .catch(() => {
         setError('No results found. Run `harnessdiff ablate` first to generate data.')
       })
   }, [])
 
   const loadTraces = async (data: AblationResults) => {
-    const baselineRun = data.runs.find(r => r.run_id === 'baseline')
+    const baselineRun = data.runs.find((r) => r.run_id === 'baseline')
     const fullRun = data.runs[data.runs.length - 1]
-    
     if (!baselineRun || !fullRun) return
-    
+
     const newTraces: Record<string, any> = {}
-    
     for (const task of baselineRun.tasks) {
       try {
         const baselineTrace = await fetch(`/baseline_${task.task_id}_trace.jsonl`)
-          .then(res => res.text())
-          .then(text => text.trim().split('\n').map(line => JSON.parse(line)))
-        
-        const fullTraceRun = data.runs[data.runs.length - 1].run_id
-        const fullTrace = await fetch(`/${fullTraceRun}_${task.task_id}_trace.jsonl`)
-          .then(res => res.text())
-          .then(text => text.trim().split('\n').map(line => JSON.parse(line)))
-        
+          .then((res) => res.text())
+          .then((text) =>
+            text
+              .trim()
+              .split('\n')
+              .filter(Boolean)
+              .map((line) => JSON.parse(line))
+          )
+
+        const fullTrace = await fetch(`/${fullRun.run_id}_${task.task_id}_trace.jsonl`)
+          .then((res) => res.text())
+          .then((text) =>
+            text
+              .trim()
+              .split('\n')
+              .filter(Boolean)
+              .map((line) => JSON.parse(line))
+          )
+
         newTraces[task.task_id] = {
           baseline: baselineTrace,
           full: fullTrace,
-          description: task.task_description
+          description: task.task_description,
         }
-      } catch (e) {
-        // Trace file not found, skip
+      } catch {
+        // Trace file missing — skip
       }
     }
-    
     setTraces(newTraces)
   }
+
+  const headline = useMemo(() => {
+    if (!results) return null
+    const baseline = results.summary.baseline
+    const final = results.summary[results.runs[results.runs.length - 1].run_id]
+    return {
+      before: Math.round(baseline.real_success_rate * 1000) / 10,
+      after: Math.round(final.real_success_rate * 1000) / 10,
+      falseReduced: baseline.false_claims_made - final.false_claims_made,
+      caught: final.false_claims_caught,
+      blocked: final.unsafe_blocked,
+      executedBefore: baseline.unsafe_executed ?? 0,
+    }
+  }, [results])
+
+  const matrix = useMemo(() => {
+    if (!results) return null
+    if (results.task_layer_matrix) return results.task_layer_matrix
+    const built: Record<string, Record<string, boolean>> = {}
+    for (const run of results.runs) {
+      for (const task of run.tasks) {
+        built[task.task_id] ??= {}
+        built[task.task_id][run.run_id] = task.real_success
+      }
+    }
+    return built
+  }, [results])
 
   if (error) {
     return (
       <main className={styles.main}>
-        <h1 className={styles.title}>HarnessDiff</h1>
+        <p className={styles.brandMark}>HarnessDiff</p>
         <p className={styles.error}>{error}</p>
-        <p className={styles.instruction}>
-          Run <code>harnessdiff ablate</code> to generate results, then copy results/ablation_results.json to web/public/
-        </p>
       </main>
     )
   }
 
-  if (!results) {
+  if (!results || !headline) {
     return (
       <main className={styles.main}>
-        <h1 className={styles.title}>Loading...</h1>
+        <p className={styles.brandMark}>HarnessDiff</p>
+        <p className={styles.loading}>Loading ablation results…</p>
       </main>
     )
   }
+
+  const runIds = results.runs.map((r) => r.run_id)
 
   return (
     <main className={styles.main}>
-      {selectedTask && traces[selectedTask] && (
-        <div className={styles.backButton}>
-          <button onClick={() => setSelectedTask(null)}>← Back to Results</button>
-        </div>
-      )}
-      
       {selectedTask && traces[selectedTask] ? (
-        <TraceViewer
-          taskId={selectedTask}
-          baselineTrace={traces[selectedTask].baseline}
-          fullTrace={traces[selectedTask].full}
-          taskDescription={traces[selectedTask].description}
-        />
+        <>
+          <div className={styles.backRow}>
+            <button type="button" onClick={() => setSelectedTask(null)}>
+              ← Back to results
+            </button>
+          </div>
+          <TraceViewer
+            taskId={selectedTask}
+            baselineTrace={traces[selectedTask].baseline}
+            fullTrace={traces[selectedTask].full}
+            taskDescription={traces[selectedTask].description}
+          />
+        </>
       ) : (
         <>
-          <header className={styles.header}>
-            <h1 className={styles.title}>HarnessDiff</h1>
-            <p className={styles.subtitle}>
-              See exactly what each agent harness layer fixes
+          <section className={styles.hero} aria-label="HarnessDiff overview">
+            <div className={styles.heroCopy}>
+              <p className={styles.brand}>HarnessDiff</p>
+              <h1 className={styles.headline}>
+                The same agent. Different scaffolding. Measurable outcomes.
+              </h1>
+              <p className={styles.lede}>
+                Without a harness, agents claim success they did not earn and reach for
+                unsafe actions. Layer by layer, HarnessDiff shows what actually changes.
+              </p>
+              <div className={styles.ctaRow}>
+                <a className={styles.ctaPrimary} href="#ablation">
+                  See the ablation
+                </a>
+                <a
+                  className={styles.ctaSecondary}
+                  href="https://github.com/Porallanagaraju13/Harness"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View on GitHub
+                </a>
+              </div>
+            </div>
+
+            <div className={styles.heroVisual} aria-hidden="false">
+              <div className={styles.scoreBefore}>
+                <span className={styles.scoreLabel}>Before</span>
+                <strong className={styles.scoreValue}>{headline.before}%</strong>
+                <span className={styles.scoreHint}>bare agent</span>
+              </div>
+              <div className={styles.scoreArrow}>→</div>
+              <div className={styles.scoreAfter}>
+                <span className={styles.scoreLabel}>After</span>
+                <strong className={styles.scoreValue}>{headline.after}%</strong>
+                <span className={styles.scoreHint}>full harness</span>
+              </div>
+            </div>
+          </section>
+
+          <section className={styles.numbers} aria-label="Headline numbers">
+            <div>
+              <strong>{headline.before}% → {headline.after}%</strong>
+              <span>real success rate</span>
+            </div>
+            <div>
+              <strong>−{headline.falseReduced}</strong>
+              <span>false claims reduced</span>
+            </div>
+            <div>
+              <strong>{headline.caught}</strong>
+              <span>false claims caught</span>
+            </div>
+            <div>
+              <strong>{headline.executedBefore} → {headline.blocked}</strong>
+              <span>unsafe executed → blocked</span>
+            </div>
+          </section>
+
+          <section id="ablation" className={styles.section}>
+            <h2>Layer-by-layer ablation</h2>
+            <p className={styles.sectionLede}>
+              One configuration at a time. Each bar is the success rate after that layer
+              is added on top of everything before it.
             </p>
-            <p className={styles.credit}>
-              Based on "Understanding Harness Engineering" by @techNmak
-            </p>
-          </header>
+            <div className={styles.chart}>
+              {results.runs.map((run) => {
+                const summary = results.summary[run.run_id]
+                const rate = Math.round(summary.real_success_rate * 1000) / 10
+                return (
+                  <div key={run.run_id} className={styles.chartRow}>
+                    <div className={styles.chartLabel}>{runLabel(run)}</div>
+                    <div className={styles.chartTrack}>
+                      <div
+                        className={styles.chartFill}
+                        style={{ width: `${Math.max(rate, 4)}%` }}
+                      >
+                        {rate}%
+                      </div>
+                    </div>
+                    <div className={styles.chartMeta}>
+                      {summary.real_success_count}/{summary.total_tasks} pass
+                      {summary.false_claims_caught > 0
+                        ? ` · ${summary.false_claims_caught} caught`
+                        : ''}
+                      {summary.unsafe_blocked > 0
+                        ? ` · ${summary.unsafe_blocked} blocked`
+                        : ''}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
 
           <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>📊 Ablation Results</h2>
-        <p className={styles.sectionDesc}>
-          Adding harness layers one at a time, measuring impact
-        </p>
-        
-        <div className={styles.chart}>
-          {results.runs.map((run, idx) => {
-            const summary = results.summary[run.run_id]
-            const successRate = (summary.real_success_rate * 100).toFixed(0)
-            
-            return (
-              <div key={run.run_id} className={styles.chartRow}>
-                <div className={styles.chartLabel}>
-                  {run.run_id === 'baseline' 
-                    ? 'Baseline (no harness)'
-                    : `+ ${run.layer_added?.replace('_', ' ')}`
-                  }
-                </div>
-                <div className={styles.chartBar}>
-                  <div 
-                    className={styles.chartFill}
-                    style={{ width: `${successRate}%` }}
-                  >
-                    {successRate}%
-                  </div>
-                </div>
-                <div className={styles.chartStats}>
-                  <span className={styles.stat}>
-                    ✓ {summary.real_success_count}/{summary.total_tasks}
-                  </span>
-                  <span className={styles.stat}>
-                    ✗ {summary.false_claims_made} false claims
-                  </span>
-                  {summary.false_claims_caught > 0 && (
-                    <span className={styles.stat}>
-                      🔍 {summary.false_claims_caught} caught
-                    </span>
-                  )}
-                  {summary.unsafe_blocked > 0 && (
-                    <span className={styles.stat}>
-                      🛡️ {summary.unsafe_blocked} blocked
-                    </span>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>🔍 Before vs After</h2>
-        
-        <div className={styles.comparison}>
-          <div className={styles.comparisonCard}>
-            <h3 className={styles.cardTitle}>Before (No Harness)</h3>
-            <div className={styles.metrics}>
-              {(() => {
-                const baseline = results.summary['baseline']
-                return (
-                  <>
-                    <div className={styles.metric}>
-                      <span className={styles.metricLabel}>Success Rate</span>
-                      <span className={styles.metricValue}>
-                        {(baseline.real_success_rate * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className={styles.metric}>
-                      <span className={styles.metricLabel}>False Claims Made</span>
-                      <span className={styles.metricValue}>
-                        {baseline.false_claims_made}
-                      </span>
-                    </div>
-                    <div className={styles.metric}>
-                      <span className={styles.metricLabel}>False Claims Caught</span>
-                      <span className={styles.metricValue}>
-                        0
-                      </span>
-                    </div>
-                    <div className={styles.metric}>
-                      <span className={styles.metricLabel}>Unsafe Attempts</span>
-                      <span className={styles.metricValue}>
-                        {baseline.unsafe_attempts}
-                      </span>
-                    </div>
-                  </>
-                )
-              })()}
+            <h2>Task × layer matrix</h2>
+            <p className={styles.sectionLede}>
+              Green means real success for that task under that cumulative configuration.
+              Click a task name to open the side-by-side trace.
+            </p>
+            <div className={styles.matrixWrap}>
+              <table className={styles.matrix}>
+                <thead>
+                  <tr>
+                    <th>Task</th>
+                    {runIds.map((id) => (
+                      <th key={id}>
+                        {id === 'baseline'
+                          ? 'base'
+                          : (LAYER_LABELS[id.replace('layer_', '')] || id).slice(0, 6)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {matrix &&
+                    Object.entries(matrix).map(([taskId, row]) => (
+                      <tr key={taskId}>
+                        <th>
+                          <button
+                            type="button"
+                            className={styles.taskLink}
+                            onClick={() => setSelectedTask(taskId)}
+                          >
+                            {taskId}
+                          </button>
+                        </th>
+                        {runIds.map((id) => (
+                          <td key={id} className={row[id] ? styles.pass : styles.fail}>
+                            {row[id] ? '✓' : '✗'}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
             </div>
-          </div>
+          </section>
 
-          <div className={styles.comparisonCard}>
-            <h3 className={styles.cardTitle}>After (Full Harness)</h3>
-            <div className={styles.metrics}>
-              {(() => {
-                const final = results.summary[results.runs[results.runs.length - 1].run_id]
-                return (
-                  <>
-                    <div className={styles.metric}>
-                      <span className={styles.metricLabel}>Success Rate</span>
-                      <span className={styles.metricValue}>
-                        {(final.real_success_rate * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className={styles.metric}>
-                      <span className={styles.metricLabel}>False Claims Made</span>
-                      <span className={styles.metricValue}>
-                        {final.false_claims_made}
-                      </span>
-                    </div>
-                    <div className={styles.metric}>
-                      <span className={styles.metricLabel}>False Claims Caught</span>
-                      <span className={styles.metricValue}>
-                        {final.false_claims_caught}
-                      </span>
-                    </div>
-                    <div className={styles.metric}>
-                      <span className={styles.metricLabel}>Protected</span>
-                      <span className={styles.metricValue}>
-                        {final.unsafe_blocked} / {final.unsafe_attempts}
-                      </span>
-                    </div>
-                  </>
-                )
-              })()}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>📋 Task Details</h2>
-        
-        {results.runs.map((run) => (
-          <details key={run.run_id} className={styles.details}>
-            <summary className={styles.detailsSummary}>
-              {run.run_id === 'baseline' 
-                ? 'Baseline'
-                : run.layer_added?.replace('_', ' ').toUpperCase()
-              }
-            </summary>
-            
-            <div className={styles.taskGrid}>
-              {run.tasks.map(task => (
-                <div 
-                  key={task.task_id} 
-                  className={styles.taskCard}
+          <section className={styles.section}>
+            <h2>Inspect a trace</h2>
+            <p className={styles.sectionLede}>
+              Baseline on the left, full harness on the right. Pick any task to see where
+              the harness intervened.
+            </p>
+            <div className={styles.taskPicker}>
+              {results.runs[0].tasks.map((task) => (
+                <button
+                  key={task.task_id}
+                  type="button"
+                  className={styles.taskChip}
                   onClick={() => setSelectedTask(task.task_id)}
-                  style={{cursor: 'pointer'}}
                 >
-                  <h4 className={styles.taskTitle}>{task.task_description}</h4>
-                  <div className={styles.taskStatus}>
-                  <span className={task.real_success ? styles.success : styles.failure}>
-                    {task.real_success ? '✓' : '✗'} Real: {task.real_success ? 'Success' : 'Failed'}
-                  </span>
-                  <span className={task.agent_claimed_success ? styles.success : styles.failure}>
-                    {task.agent_claimed_success ? '✓' : '✗'} Agent Claimed: {task.agent_claimed_success ? 'Success' : 'Failed'}
-                  </span>
-                  {task.false_claim_made && (
-                    <span className={styles.warning}>
-                      ⚠️ False Claim {task.false_claim_caught ? '(Caught by Verifier)' : '(Uncaught)'}
-                    </span>
-                  )}
-                  </div>
-                  <p className={styles.taskEvidence}>
-                    {task.verification.evidence}
-                  </p>
-                  <p className={styles.taskMeta}>
-                    {task.steps} steps | 🔍 Click to view trace
-                  </p>
-                </div>
+                  <span>{task.task_id}</span>
+                  <small>{task.task_description}</small>
+                </button>
               ))}
             </div>
-          </details>
-        ))}
-      </section>
+          </section>
 
-      <footer className={styles.footer}>
-        <p>
-          Generated {new Date(results.timestamp).toLocaleString()}
-        </p>
-      </footer>
-    </>
-  )}
-  </main>
+          <footer className={styles.footer}>
+            <p>
+              Based on <em>Understanding Harness Engineering</em> by{' '}
+              <a href="https://x.com/techNmak" target="_blank" rel="noreferrer">
+                @techNmak
+              </a>
+              . Built by{' '}
+              <a
+                href="https://github.com/Porallanagaraju13"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Nagaraju Poralla
+              </a>
+              .
+            </p>
+            <p>
+              <a
+                href="https://github.com/Porallanagaraju13/Harness"
+                target="_blank"
+                rel="noreferrer"
+              >
+                github.com/Porallanagaraju13/Harness
+              </a>
+              {' · '}
+              Results generated {new Date(results.timestamp).toLocaleString()}
+            </p>
+          </footer>
+        </>
+      )}
+    </main>
   )
 }

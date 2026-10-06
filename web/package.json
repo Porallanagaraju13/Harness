@@ -1,15 +1,18 @@
 {
   "name": "harnessdiff-web",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "export": "next build && next export"
+    "lint": "next lint"
   },
   "dependencies": {
-    "next": "^14.0.0",
+    "next": "^14.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

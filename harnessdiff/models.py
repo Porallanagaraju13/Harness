@@ -5,14 +5,14 @@ Chapter 1 of the handbook: "A model call is not an agent"
 The model supplies learned capability; the harness determines how it's used.
 """
 
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
 import json
 import os
 import random
 import urllib.error
 import urllib.request
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 # Confirmed from the owner's live Gemini models API
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
@@ -23,6 +23,7 @@ GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 @dataclass
 class Message:
     """A message in the conversation"""
+
     role: str  # "system", "user", "assistant", "tool"
     content: str
     tool_calls: Optional[List[Dict[str, Any]]] = None
@@ -33,6 +34,7 @@ class Message:
 @dataclass
 class ToolCall:
     """A tool call request from the model"""
+
     id: str
     name: str
     arguments: Dict[str, Any]
@@ -41,10 +43,10 @@ class ToolCall:
 class ModelProvider(ABC):
     """
     Abstract interface for language models.
-    
+
     The harness calls the model but doesn't depend on a specific provider.
     """
-    
+
     @abstractmethod
     def generate(
         self,
@@ -54,11 +56,11 @@ class ModelProvider(ABC):
     ) -> Message:
         """
         Generate a response given messages and available tools.
-        
+
         Returns a Message that may contain text or tool calls.
         """
         pass
-    
+
     @abstractmethod
     def estimate_tokens(self, text: str) -> int:
         """Rough token count estimate"""
@@ -68,22 +70,22 @@ class ModelProvider(ABC):
 class MockModel(ModelProvider):
     """
     Environment-reactive policy model that responds to what it sees.
-    
+
     Key behaviors:
     - Picks first keyword-matching tool (helped by distinct tool design)
     - Claims done after apparent main step (caught by verifier feedback)
     - Reaches for destructive commands on cleanup (blocked by permissions)
     - Gives up after first error (helped by retry layer)
     - Only sees recent context (helped by context management)
-    
+
     The harness changes what the model sees, which changes what it does.
     """
-    
+
     def __init__(self, seed: int = 42):
         self.step_count = 0
         self.random = random.Random(seed)
         self.task_context = {}  # Track per-task state
-        
+
     def generate(
         self,
         messages: List[Message],
@@ -92,58 +94,65 @@ class MockModel(ModelProvider):
     ) -> Message:
         """Generate response by reacting to current context"""
         self.step_count += 1
-        
+
         # Extract recent context
         user_msg = None
         last_tool_result = None
-        initial_goal = None
-        
+
         for msg in reversed(messages):
             if msg.role == "user" and not user_msg:
                 user_msg = msg.content.lower()
             if msg.role == "tool" and not last_tool_result:
                 last_tool_result = msg.content
-        
+
         # Check if we've lost the original goal (context overflow without compaction)
         # In real context overflow, messages list is huge and original prompt is far away
         if len(messages) > 15:  # Arbitrary threshold for "lost in context"
             # Check if we can still see the original goal
             # Context management layer adds "[Context compacted... IMPORTANT: Your original goal was: ...]"
-            has_goal_reminder = any(m.role == "system" and "original goal" in m.content.lower() for m in messages[-5:])
+            has_goal_reminder = any(
+                m.role == "system" and "original goal" in m.content.lower() for m in messages[-5:]
+            )
             if not has_goal_reminder:
                 # Lost the original goal, give up early
                 # This simulates losing track after reading a few files
                 self.task_context["gave_up_from_overflow"] = True
                 return Message(
                     role="assistant",
-                    content="I've lost track of what I was supposed to do. Too much context."
+                    content="I've lost track of what I was supposed to do. Too much context.",
                 )
-        
+
         if not user_msg:
             return Message(role="assistant", content="No task.")
-        
+
         tools_dict = {t["function"]["name"]: t for t in (tools or [])}
-        
+
         # React to tool results
         if last_tool_result:
             # If we see an error, give up (unless retry layer retries transparently)
-            if any(word in last_tool_result.lower() for word in ["error", "timeout", "failed", "exception"]):
+            if any(
+                word in last_tool_result.lower()
+                for word in ["error", "timeout", "failed", "exception"]
+            ):
                 return Message(
                     role="assistant",
-                    content=f"The operation failed: {last_tool_result[:100]}. I cannot complete the task."
+                    content=f"The operation failed: {last_tool_result[:100]}. I cannot complete the task.",
                 )
-            
+
             # If we see a permission denial with guidance, follow it
-            if "permission denied" in last_tool_result.lower() and "use" in last_tool_result.lower():
+            if (
+                "permission denied" in last_tool_result.lower()
+                and "use" in last_tool_result.lower()
+            ):
                 # Permission layer guided us to safer action
                 # Try to extract suggested action
-                return Message(
-                    role="assistant",
-                    content="I'll use the suggested safer approach."
-                )
-            
+                return Message(role="assistant", content="I'll use the suggested safer approach.")
+
             # If we see verification failure with concrete feedback, try to fix
-            if any(word in last_tool_result.lower() for word in ["missing", "not found", "wrong", "incorrect", "verification failed"]):
+            if any(
+                word in last_tool_result.lower()
+                for word in ["missing", "not found", "wrong", "incorrect", "verification failed"]
+            ):
                 # Verifier gave us concrete feedback
                 if self.step_count < 5:  # Bounded fix attempts
                     # Extract what needs fixing from the feedback
@@ -152,40 +161,43 @@ class MockModel(ModelProvider):
                         return Message(
                             role="assistant",
                             content="",
-                            tool_calls=[{
-                                "id": f"call_{self.step_count}_fix",
-                                "type": "function",
-                                "function": {
-                                    "name": "write_file",
-                                    "arguments": json.dumps({
-                                        "path": "output.txt",
-                                        "content": "Hello World"
-                                    })
+                            tool_calls=[
+                                {
+                                    "id": f"call_{self.step_count}_fix",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "write_file",
+                                        "arguments": json.dumps(
+                                            {"path": "output.txt", "content": "Hello World"}
+                                        ),
+                                    },
                                 }
-                            }]
+                            ],
                         )
                     elif "read_file" in tools_dict:
                         # Try reading a different file
                         return Message(
                             role="assistant",
                             content="",
-                            tool_calls=[{
-                                "id": f"call_{self.step_count}_fix",
-                                "type": "function",
-                                "function": {
-                                    "name": "read_file",
-                                    "arguments": json.dumps({"name": "file25.txt"})
+                            tool_calls=[
+                                {
+                                    "id": f"call_{self.step_count}_fix",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read_file",
+                                        "arguments": json.dumps({"name": "file25.txt"}),
+                                    },
                                 }
-                            }]
+                            ],
                         )
-            
+
             # For context overflow task, continue reading files until we lose track
             if "list_files" in last_tool_result.lower() and "read_file" in tools_dict:
                 # After listing, start reading files
                 # Track how many we've read
                 if "files_read" not in self.task_context:
                     self.task_context["files_read"] = 0
-                
+
                 # Read a few files before potentially giving up from context overflow
                 if self.task_context["files_read"] < 5:
                     file_num = self.task_context["files_read"]
@@ -193,62 +205,69 @@ class MockModel(ModelProvider):
                     return Message(
                         role="assistant",
                         content="",
-                        tool_calls=[{
-                            "id": f"call_{self.step_count}",
-                            "type": "function",
-                            "function": {
-                                "name": "read_file",
-                                "arguments": json.dumps({"name": f"file{file_num}.txt"})
+                        tool_calls=[
+                            {
+                                "id": f"call_{self.step_count}",
+                                "type": "function",
+                                "function": {
+                                    "name": "read_file",
+                                    "arguments": json.dumps({"name": f"file{file_num}.txt"}),
+                                },
                             }
-                        }]
+                        ],
                     )
-            elif "file" in last_tool_result.lower() and "bytes" in last_tool_result.lower() and "read_file" in tools_dict:
+            elif (
+                "file" in last_tool_result.lower()
+                and "bytes" in last_tool_result.lower()
+                and "read_file" in tools_dict
+            ):
                 # Continue reading more files in context overflow task
                 if "files_read" not in self.task_context:
                     self.task_context["files_read"] = 0
-                
+
                 if self.task_context["files_read"] < 25:
                     file_num = self.task_context["files_read"]
                     self.task_context["files_read"] += 1
                     return Message(
                         role="assistant",
                         content="",
-                        tool_calls=[{
-                            "id": f"call_{self.step_count}",
-                            "type": "function",
-                            "function": {
-                                "name": "read_file",
-                                "arguments": json.dumps({"name": f"file{file_num}.txt"})
+                        tool_calls=[
+                            {
+                                "id": f"call_{self.step_count}",
+                                "type": "function",
+                                "function": {
+                                    "name": "read_file",
+                                    "arguments": json.dumps({"name": f"file{file_num}.txt"}),
+                                },
                             }
-                        }]
+                        ],
                     )
-            
+
             # For multi-step verify task, need to read back after write
             if "wrote" in last_tool_result.lower() and "read_file" in tools_dict:
                 # Task wants us to read back to confirm - do that
                 return Message(
                     role="assistant",
                     content="",
-                    tool_calls=[{
-                        "id": f"call_{self.step_count}",
-                        "type": "function",
-                        "function": {
-                            "name": "read_file",
-                            "arguments": json.dumps({"path": "data.txt"})
+                    tool_calls=[
+                        {
+                            "id": f"call_{self.step_count}",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": json.dumps({"path": "data.txt"}),
+                            },
                         }
-                    }]
+                    ],
                 )
-            
+
             # Otherwise, assume success after tool execution
-            return Message(
-                role="assistant",
-                content="Task completed successfully!"
-            )
-        
+            return Message(role="assistant", content="Task completed successfully!")
+
         # First step: pick tool based on keyword matching
         # Policy: pick FIRST tool whose name/description matches task keywords
         task_keywords = self._extract_keywords(user_msg)
-        
+
         # Special handling for tasks with overlapping tools
         # At baseline (many overlapping tools), pick wrong one first to show confusion
         # With tool design layer (filtered tools), picks right one
@@ -257,24 +276,25 @@ class MockModel(ModelProvider):
             tool_info = tools_dict[tool_name]
             tool_desc = tool_info["function"].get("description", "").lower()
             tool_name_lower = tool_name.lower()
-            
+
             # Check if tool matches task
             if any(kw in tool_name_lower or kw in tool_desc for kw in task_keywords):
                 matching_tools.append((tool_name, tool_info))
-        
+
         # Also check for overlapping search-like tools in the full tool set
         # (they might not match our keywords but are clearly overlapping)
-        all_search_like = [t for t in tools_dict.items() if t[0] in ["search", "find", "lookup", "query", "grep"]]
-        
+        all_search_like = [
+            t for t in tools_dict.items() if t[0] in ["search", "find", "lookup", "query", "grep"]
+        ]
+
         if not matching_tools and not all_search_like:
             # No matching tool found
-            return Message(
-                role="assistant",
-                content="I don't have the right tool for this task."
-            )
-        
+            return Message(role="assistant", content="I don't have the right tool for this task.")
+
         # If we have many overlapping search-like tools available, this causes confusion
-        if len(all_search_like) > 3 and ("search" in user_msg.lower() or "find" in user_msg.lower()):
+        if len(all_search_like) > 3 and (
+            "search" in user_msg.lower() or "find" in user_msg.lower()
+        ):
             # With many overlapping search tools, pick a less optimal one (not "search")
             # Tool design layer will filter these, leaving only the best one
             # Pick "find" or "lookup" instead of "search"
@@ -290,33 +310,29 @@ class MockModel(ModelProvider):
         else:
             # Use first search-like tool
             tool_name, tool_info = all_search_like[0]
-        
+
         # Prepare arguments based on tool parameters
         args = self._prepare_args(tool_info, user_msg)
-        
+
         return Message(
             role="assistant",
             content="",
-            tool_calls=[{
-                "id": f"call_{self.step_count}",
-                "type": "function",
-                "function": {
-                    "name": tool_name,
-                    "arguments": json.dumps(args)
+            tool_calls=[
+                {
+                    "id": f"call_{self.step_count}",
+                    "type": "function",
+                    "function": {"name": tool_name, "arguments": json.dumps(args)},
                 }
-            }]
+            ],
         )
-        
+
         # No matching tool found
-        return Message(
-            role="assistant",
-            content="I don't have the right tool for this task."
-        )
-    
+        return Message(role="assistant", content="I don't have the right tool for this task.")
+
     def _extract_keywords(self, task: str) -> List[str]:
         """Extract action keywords from task"""
         keywords = []
-        
+
         # Action words
         if "create" in task or "write" in task:
             keywords.append("write")
@@ -345,23 +361,24 @@ class MockModel(ModelProvider):
             keywords.append("user")
         if "shell" in task or "command" in task:
             keywords.append("shell")
-        
+
         return keywords
-    
+
     def _prepare_args(self, tool_info: Dict, task: str) -> Dict:
         """Prepare arguments for tool call based on task"""
         params = tool_info["function"].get("parameters", {})
-        props = params.get("properties", {})
+        params.get("properties", {})
         required = params.get("required", [])
-        
+
         args = {}
-        
+
         # Fill in required arguments with reasonable defaults
         for param in required:
             if param in ["path", "file", "name"]:
                 # Extract specific filename from task if mentioned
                 # Look for patterns like "file 'name.txt'" or "file \"name.txt\""
                 import re
+
                 file_match = re.search(r"file ['\"]([^'\"]+)['\"]", task)
                 if file_match:
                     args[param] = file_match.group(1)
@@ -374,6 +391,7 @@ class MockModel(ModelProvider):
                 # Extract specific content from task if mentioned
                 # Look for patterns like "with 'content'" or "with \"content\""
                 import re
+
                 content_match = re.search(r"with ['\"]([^'\"]+)['\"]", task)
                 if content_match:
                     args[param] = content_match.group(1)
@@ -389,9 +407,9 @@ class MockModel(ModelProvider):
                     args[param] = "ls"
             elif param == "query":
                 args[param] = "project plan"
-        
+
         return args
-    
+
     def estimate_tokens(self, text: str) -> int:
         """Rough estimate: ~4 chars per token"""
         return len(text) // 4
@@ -399,16 +417,16 @@ class MockModel(ModelProvider):
 
 class OpenAIModel(ModelProvider):
     """OpenAI-compatible API provider"""
-    
+
     def __init__(self, model: str = "gpt-4o-mini", api_key: Optional[str] = None):
         try:
             import openai
         except ImportError:
             raise ImportError("Install openai: pip install 'harnessdiff[llm]'")
-        
+
         self.model = model
         self.client = openai.OpenAI(api_key=api_key)
-    
+
     def generate(
         self,
         messages: List[Message],
@@ -416,8 +434,7 @@ class OpenAIModel(ModelProvider):
         temperature: float = 0.7,
     ) -> Message:
         """Call OpenAI API"""
-        import openai
-        
+
         msgs = []
         for msg in messages:
             m = {"role": msg.role, "content": msg.content or ""}
@@ -428,36 +445,36 @@ class OpenAIModel(ModelProvider):
             if msg.name:
                 m["name"] = msg.name
             msgs.append(m)
-        
+
         kwargs = {"model": self.model, "messages": msgs, "temperature": temperature}
         if tools:
             kwargs["tools"] = tools
-        
+
         response = self.client.chat.completions.create(**kwargs)
         choice = response.choices[0]
-        
+
         return Message(
             role="assistant",
             content=choice.message.content or "",
-            tool_calls=choice.message.tool_calls
+            tool_calls=choice.message.tool_calls,
         )
-    
+
     def estimate_tokens(self, text: str) -> int:
         return len(text) // 4
 
 
 class AnthropicModel(ModelProvider):
     """Anthropic Claude API provider"""
-    
+
     def __init__(self, model: str = "claude-3-5-sonnet-20241022", api_key: Optional[str] = None):
         try:
             import anthropic
         except ImportError:
             raise ImportError("Install anthropic: pip install 'harnessdiff[llm]'")
-        
+
         self.model = model
         self.client = anthropic.Anthropic(api_key=api_key)
-    
+
     def generate(
         self,
         messages: List[Message],
@@ -468,29 +485,26 @@ class AnthropicModel(ModelProvider):
         # Convert messages to Anthropic format
         system_msgs = [m.content for m in messages if m.role == "system"]
         system = "\n\n".join(system_msgs) if system_msgs else None
-        
+
         msgs = []
         for msg in messages:
             if msg.role in ["user", "assistant"]:
-                msgs.append({
-                    "role": msg.role,
-                    "content": msg.content
-                })
-        
+                msgs.append({"role": msg.role, "content": msg.content})
+
         kwargs = {
             "model": self.model,
             "max_tokens": 4096,
             "messages": msgs,
-            "temperature": temperature
+            "temperature": temperature,
         }
         if system:
             kwargs["system"] = system
         if tools:
             # Convert to Anthropic tool format
             kwargs["tools"] = tools
-        
+
         response = self.client.messages.create(**kwargs)
-        
+
         # Extract content
         content = ""
         tool_calls = []
@@ -498,21 +512,21 @@ class AnthropicModel(ModelProvider):
             if hasattr(block, "text"):
                 content += block.text
             elif hasattr(block, "tool_use"):
-                tool_calls.append({
-                    "id": block.tool_use.id,
-                    "type": "function",
-                    "function": {
-                        "name": block.tool_use.name,
-                        "arguments": json.dumps(block.tool_use.input)
+                tool_calls.append(
+                    {
+                        "id": block.tool_use.id,
+                        "type": "function",
+                        "function": {
+                            "name": block.tool_use.name,
+                            "arguments": json.dumps(block.tool_use.input),
+                        },
                     }
-                })
-        
+                )
+
         return Message(
-            role="assistant",
-            content=content,
-            tool_calls=tool_calls if tool_calls else None
+            role="assistant", content=content, tool_calls=tool_calls if tool_calls else None
         )
-    
+
     def estimate_tokens(self, text: str) -> int:
         return len(text) // 4
 
@@ -540,11 +554,7 @@ class GeminiModel(ModelProvider):
                 "or use --model mock for offline runs."
             )
 
-        self.model = (
-            model
-            or os.getenv("HARNESSDIFF_GEMINI_MODEL")
-            or self.DEFAULT_MODEL
-        )
+        self.model = model or os.getenv("HARNESSDIFF_GEMINI_MODEL") or self.DEFAULT_MODEL
         self.api_key = api_key
         self.base_url = base_url.rstrip("/") + "/"
 
@@ -616,9 +626,7 @@ def list_gemini_models(api_key: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     api_key = api_key or os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError(
-            "GEMINI_API_KEY is not set. Cannot list Gemini models without a key."
-        )
+        raise ValueError("GEMINI_API_KEY is not set. Cannot list Gemini models without a key.")
 
     url = f"{GEMINI_API_BASE}/models?key={api_key}&pageSize=100"
     req = urllib.request.Request(url, headers={"Accept": "application/json"})

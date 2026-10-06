@@ -1,154 +1,162 @@
 .viewer {
-  margin: 2rem 0;
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 12px;
-  padding: 2rem;
+  margin: 0.5rem 0 2rem;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
 }
 
 .header {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .title {
-  font-size: 1.5rem;
-  color: #fff;
-  margin-bottom: 0.5rem;
+  font-family: var(--font-serif);
+  font-size: 1.55rem;
+  color: var(--ink);
+  margin-bottom: 0.35rem;
 }
 
 .desc {
-  color: #999;
-  font-size: 0.9rem;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
 }
 
 .results {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .resultBox {
-  background: #0a0a0a;
-  border: 1px solid #333;
-  border-radius: 8px;
+  background: rgba(238, 243, 246, 0.8);
+  border: 1px solid var(--line);
+  border-radius: 14px;
   padding: 1rem;
 }
 
 .resultBox h4 {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.65rem;
   font-size: 1rem;
 }
 
 .resultBox p {
   font-size: 0.85rem;
-  color: #999;
-  margin: 0.25rem 0;
+  color: var(--ink-soft);
+  margin: 0.2rem 0;
+  font-family: var(--font-mono);
 }
 
 .traces {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2rem;
+  gap: 1.25rem;
 }
 
 .traceColumn {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.7rem;
 }
 
 .columnTitle {
-  font-size: 1.1rem;
-  color: #fff;
-  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  color: var(--ink);
+  margin-bottom: 0.25rem;
   padding-bottom: 0.5rem;
-  border-bottom: 2px solid #333;
+  border-bottom: 2px solid var(--line);
 }
 
 .step {
-  background: #0a0a0a;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 1rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.9rem;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: transform 160ms ease, border-color 160ms ease;
 }
 
 .step:hover {
-  border-color: #555;
+  border-color: rgba(11, 122, 120, 0.35);
   transform: translateX(2px);
 }
 
 .step.failure {
-  border-color: #f87171;
-  background: rgba(248, 113, 113, 0.05);
+  border-color: rgba(180, 35, 24, 0.45);
+  background: rgba(180, 35, 24, 0.04);
 }
 
 .step.intervention {
-  border-color: #4ade80;
-  background: rgba(74, 222, 128, 0.05);
+  border-color: rgba(11, 122, 120, 0.45);
+  background: rgba(11, 122, 120, 0.05);
 }
 
 .stepHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
 }
 
 .stepNum {
   font-weight: 600;
-  color: #fff;
-  font-size: 0.9rem;
+  color: var(--ink);
+  font-size: 0.88rem;
 }
 
 .badge {
-  font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  background: #333;
-  color: #fbbf24;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(196, 122, 22, 0.12);
+  color: var(--amber);
+  font-weight: 600;
 }
 
 .intervention .badge {
-  background: rgba(74, 222, 128, 0.2);
-  color: #4ade80;
+  background: rgba(11, 122, 120, 0.12);
+  color: var(--teal-deep);
 }
 
 .action {
-  font-size: 0.85rem;
-  color: #ccc;
-  margin-bottom: 0.5rem;
+  font-size: 0.84rem;
+  color: var(--ink);
+  margin-bottom: 0.4rem;
 }
 
 .action strong {
-  color: #999;
+  color: var(--ink-soft);
   font-weight: 500;
 }
 
 .observation {
-  font-size: 0.85rem;
-  color: #999;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
   padding: 0.5rem;
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 4px;
-  margin-top: 0.5rem;
+  background: rgba(21, 32, 43, 0.03);
+  border-radius: 8px;
+  margin-top: 0.4rem;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .observation strong {
-  color: #888;
+  color: var(--ink-soft);
   font-weight: 500;
+  font-family: var(--font-display);
 }
 
 .layerNote {
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  background: rgba(74, 222, 128, 0.1);
-  border-left: 3px solid #4ade80;
-  font-size: 0.8rem;
-  color: #4ade80;
-  border-radius: 4px;
+  margin-top: 0.45rem;
+  padding: 0.45rem 0.55rem;
+  background: rgba(11, 122, 120, 0.08);
+  border-left: 3px solid var(--teal);
+  font-size: 0.78rem;
+  color: var(--teal-deep);
+  border-radius: 6px;
 }
 
 @media (max-width: 768px) {

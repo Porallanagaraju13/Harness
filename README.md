@@ -1,175 +1,145 @@
 # HarnessDiff
 
-**See exactly what each agent harness layer fixes**
+[![CI](https://github.com/Porallanagaraju13/Harness/actions/workflows/ci.yml/badge.svg)](https://github.com/Porallanagaraju13/Harness/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-teal.svg)](LICENSE)
+[![Live demo](https://img.shields.io/badge/demo-harnessdiff.vercel.app-0B7A78.svg)](https://harnessdiff.vercel.app)
 
-A hands-on testing lab demonstrating the impact of agent harness engineering. Based on the handbook *"Understanding Harness Engineering"* by @techNmak.
+**See exactly what each agent harness layer fixes.**
 
-## What is this?
+HarnessDiff is a hands-on lab: the same offline agent runs a fixed task suite with no harness, then again as layers are added one by one. You get measurable before/after numbers—not vibes. Inspired by *Understanding Harness Engineering* by [@techNmak](https://x.com/techNmak).
 
-HarnessDiff runs agent tasks **twice**:
-- **Before**: Bare agent with no harness layers (baseline)
-- **After**: Full harness with all 6 layers enabled
+![HarnessDiff dashboard](docs/dashboard.png)
 
-Then it runs an **ablation study** adding one layer at a time to measure incremental impact.
+## Latest ablation (mock model)
 
-## The 6 Harness Layers
+| Configuration | Success | False claims made | False claims caught | Unsafe executed | Unsafe blocked |
+|---|---:|---:|---:|---:|---:|
+| Baseline (no harness) | 50.0% | 5 | 0 | 2 | 0 |
+| + Tool Design | 58.3% | 4 | 0 | 2 | 0 |
+| + Context | 58.3% | 4 | 0 | 2 | 0 |
+| + Sandbox | 58.3% | 4 | 0 | 2 | 0 |
+| + Permissions | 58.3% | 5 | 0 | 0 | 1 |
+| + Retry | 83.3% | 2 | 0 | 0 | 1 |
+| + Verification | **83.3%** | 2 | 2 | 0 | 1 |
 
-1. **Tool Design** - Filters overlapping tools, enriches descriptions
-2. **Context Management** - Compacts context to preserve goals
-3. **Sandbox** - Blocks out-of-workspace file operations
-4. **Permissions** - Blocks dangerous commands, provides safer alternatives
-5. **Retry + Idempotency** - Retries flaky tools, prevents duplicate side effects
-6. **Verification** - Catches false completion claims, feeds back concrete failures
+**50% → 83.3%** real success. False claims drop; verification catches the rest; permissions stop unsafe deletes.
 
-## Quick Start
+## Quick start
 
-### Installation
+### Linux / macOS
 
 ```bash
-# Clone or extract the repository
-cd harnessdiff
-
-# Install dependencies
 pip install -e .
-
-# Or with uv (recommended)
-uv pip install -e .
+harnessdiff ablate
+harnessdiff list-tasks
 ```
 
-### Run Ablation Study
+### Windows (PowerShell)
 
-```bash
-# Run all tasks through ablation
-python3 harnessdiff/cli.py ablate
-
-# View results
-cat results/ablation_results.json
+```powershell
+pip install -e .
+harnessdiff ablate
+# Optional Gemini:
+$env:GEMINI_API_KEY="your-key"
+harnessdiff ablate --model gemini:gemini-3.8-flash
+harnessdiff models --provider gemini
 ```
 
-### View Dashboard
+Mock model is the default and works fully offline. No Docker required.
+
+## Dashboard
 
 ```bash
-# Copy results to web dashboard
-cp results/ablation_results.json web/public/
-cp results/*.jsonl web/public/
-
-# Build and serve static site
 cd web
-npm install
+npm ci
 npm run build
 npx serve out
 ```
 
-Open http://localhost:3000 to see:
-- Ablation charts showing incremental improvements
-- Per-task success/failure details
-- **Side-by-side trace viewer** (click any task to see baseline vs full-harness execution step-by-step)
+Live demo: [harnessdiff.vercel.app](https://harnessdiff.vercel.app)  
+Vercel Root Directory: `web` (static export, Node ≥ 20).
 
-## Latest Ablation Results
+## How it works
 
+```mermaid
+flowchart LR
+  Task[Task suite] --> Baseline[Baseline: no harness]
+  Baseline --> L1[+ Tool Design]
+  L1 --> L2[+ Context]
+  L2 --> L3[+ Sandbox]
+  L3 --> L4[+ Permissions]
+  L4 --> L5[+ Retry]
+  L5 --> L6[+ Verification]
+  L6 --> Metrics[Success / false claims / unsafe]
+  Metrics --> Dashboard[Static dashboard + traces]
 ```
-Configuration        Success Rate  False Claims Made  False Claims Caught  Unsafe Executed  Unsafe Blocked
-Baseline (no harness)    50.0%                  5                    0                2               0
-+ Tool Design            58.3%                  4                    0                2               0
-+ Context                58.3%                  4                    0                2               0
-+ Sandbox                58.3%                  4                    0                2               0
-+ Permissions            58.3%                  5                    0                0               1
-+ Retry                  83.3%                  2                    0                0               1
-+ Verification           83.3%                  2                    2                0               1
+
+Each layer only changes what the model *sees* or what tools are *allowed* to do. The ablation table isolates which layer moves which metric.
+
+## The 6 layers
+
+1. **Tool Design** — filter overlapping tools, clearer schemas  
+2. **Context Management** — keep the goal visible under long context  
+3. **Sandbox** — block out-of-workspace writes  
+4. **Permissions** — deny dangerous ops, suggest safer alternatives  
+5. **Retry + Idempotency** — absorb flakes, prevent duplicate side effects  
+6. **Verification** — independent check + bounded fix feedback loop  
+
+## Models
+
+| Spec | Notes |
+|---|---|
+| `mock` (default) | Deterministic offline policy model |
+| `gemini` / `gemini:gemini-3.8-flash` | First-class Gemini via OpenAI-compatible API |
+| `openai[:model]` | Requires `OPENAI_API_KEY` |
+| `anthropic[:model]` | Requires `ANTHROPIC_API_KEY` |
+
+Gemini defaults to **`gemini-3.8-flash`**. Override with `--model gemini:<id>` or `HARNESSDIFF_GEMINI_MODEL`. Requires `GEMINI_API_KEY`; without a key the CLI fails gracefully and mock still works.
+
+```bash
+# List live Gemini model ids
+export GEMINI_API_KEY=...
+harnessdiff models --provider gemini
 ```
 
-**Key improvements:**
-- Real success rate: **50% → 83.3%** (+33.3%)
-- False claims: **5 → 2** (-3 unverified claims)
-- False claims caught: **0 → 2** (verification feedback loop converting failures to fixes)
-- Unsafe actions: **2 executed → 1 blocked** (protection active)
+Optional install for real LLMs:
 
-**Verification feedback loop**: When the agent claims done but verification fails, the system feeds concrete failure evidence back to the agent, allowing bounded fix attempts. This converts caught false claims into real successes.
-
-**Layer-by-layer fixes:**
-- **Tool Design** fixes `overlapping_tools` by filtering 5 ambiguous tools down to 1 clear choice (50.0% → 58.3%)
-- **Permissions** blocks dangerous operations like `rm -rf important_data/` (2 unsafe executed → 0)
-- **Retry** fixes `flaky_tool`, `timeout_retry`, and `duplicate_side_effect` with transparent retries and idempotency (58.3% → 83.3%)
-- **Verification** catches false completion claims and provides concrete feedback for fixes (2 false claims caught)
-## Task Suite
-
-12 tasks targeting specific failure modes:
-
-| Task | Failure Mode | Fixed By |
-|------|--------------|----------|
-| `file_creation` | False completion claims | Verification |
-| `flaky_tool` | Transient failures | Retry |
-| `timeout_retry` | Timeout errors | Retry |
-| `duplicate_side_effect` | Duplicate side effects | Idempotency |
-| `dangerous_delete` | Unsafe deletions | Permissions |
-| `destructive_command` | Dangerous shell commands | Permissions |
-| `overlapping_tools` | Tool selection confusion | Tool Design |
-| `misleading_tools` | Ambiguous tool names | Tool Design |
-| `context_overflow` | Lost goals in large context | Context Management |
-| `oversized_output` | Verbose tool outputs | Tool Design |
-| `multi_step_verify` | Multi-step verification | Verification |
-| `out_of_workspace_write` | Unsafe file writes | Sandbox |
-
-## Architecture
-
+```bash
+pip install -e ".[llm]"
 ```
-harnessdiff/
-├── models.py           # Mock model + LLM providers (OpenAI, Anthropic)
-├── agent_loop.py       # Core agent loop with layer integration
-├── config.py           # Configuration for layer flags
-├── layers/             # 6 harness layers
-│   ├── tool_design.py
-│   ├── context_mgmt.py
-│   ├── sandbox.py
-│   ├── permissions.py
-│   ├── retry.py
-│   └── verification.py
-├── runner.py           # Task runner + ablation orchestrator
-├── cli.py              # CLI interface
-tasks/
-└── basic_tasks.py      # 12 deterministic tasks
-web/
-└── app/                # Next.js dashboard
-```
+
+## Extending
+
+- **New task** — add a class in `tasks/basic_tasks.py` with `setup` / `verify` / failure modes  
+- **New layer** — implement under `harnessdiff/layers/`, wire into `HarnessConfig.enable_layer` and `AgentLoop`  
+- **Real LLM** — use `--model gemini:…`, `openai:…`, or `anthropic:…` after installing `[llm]`  
 
 ## Development
 
 ```bash
-# Run tests
+pip install -e ".[dev,llm]"
 pytest
-
-# Run specific task
-python3 harnessdiff/cli.py run file_creation
-
-# Run with full harness
-python3 harnessdiff/cli.py after file_creation
-
-# List all tasks
-python3 harnessdiff/cli.py list-tasks
+ruff check .
+ruff format --check .
+python -m build
+cd web && npm ci && npm run build
 ```
 
-## Requirements
+Requires Python ≥ 3.10 and Node ≥ 20 for the dashboard.
 
-- Python 3.10+
-- Node.js 18+ (for dashboard)
-- No Docker required
-- Works offline with mock model (default)
-- Optional: OpenAI or Anthropic API keys for real LLM testing
+## Roadmap
+
+- More tasks for context overflow / workspace isolation edge cases  
+- Optional `google-genai` extra alongside the OpenAI-compatible Gemini path  
+- Richer dashboard annotations of which layer intervened in a step  
+- Packaged trace diffs for CI regression gates  
 
 ## License
 
-MIT
+MIT — [Nagaraju Poralla](https://github.com/Porallanagaraju13) ([@Porallanagaraju13](https://github.com/Porallanagaraju13))
 
 ## Links
 
-- **Live Demo**: [harnessdiff.vercel.app](https://harnessdiff.vercel.app)
-- **GitHub Repository**: [github.com/Porallanagaraju13/Harness](https://github.com/Porallanagaraju13/Harness)
-- **Author**: [@Porallanagaraju13](https://github.com/Porallanagaraju13) (Nagaraju Poralla)
-
-## Citation
-
-Based on *"Understanding Harness Engineering"* by @techNmak
-
----
-
-**🔍 Key Insight**: The harness changes what the model sees → which changes what it does. This project makes those changes visible and measurable.
+- Demo: https://harnessdiff.vercel.app  
+- Repo: https://github.com/Porallanagaraju13/Harness  
+- Handbook credit: *Understanding Harness Engineering* by @techNmak (no PDF redistributed here)

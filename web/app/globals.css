@@ -4,21 +4,62 @@
   margin: 0;
 }
 
+:root {
+  --ink: #15202b;
+  --ink-soft: #3d4f5f;
+  --paper: #eef3f6;
+  --paper-2: #e2ebf0;
+  --teal: #0b7a78;
+  --teal-deep: #065f5d;
+  --amber: #c47a16;
+  --success: #1f7a4c;
+  --fail: #b42318;
+  --line: rgba(21, 32, 43, 0.12);
+  --shadow: 0 18px 50px rgba(21, 32, 43, 0.08);
+  --font-display: 'Outfit', sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
 html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
 }
 
 body {
-  background: #0a0a0a;
-  color: #e0e0e0;
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(11, 122, 120, 0.16), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(196, 122, 22, 0.12), transparent 50%),
+    linear-gradient(180deg, #f7fafc 0%, var(--paper) 40%, var(--paper-2) 100%);
+  font-family: var(--font-display);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(21, 32, 43, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(21, 32, 43, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 75%);
+  z-index: 0;
 }
 
 a {
   color: inherit;
   text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+code {
+  font-family: var(--font-mono);
 }

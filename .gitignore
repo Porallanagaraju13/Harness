@@ -21,45 +21,47 @@ wheels/
 *.egg
 
 # Virtual environments
+.venv/
 venv/
 env/
 ENV/
 
-# Testing
+# Testing / local outputs
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
+.ruff_cache/
+.mypy_cache/
+test_results/
 
-# IDEs
+# Local ablation runs (committed copies live under web/public/)
+/results/
+*.log
+
+# IDEs / OS
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.DS_Store
+Thumbs.db
 
-# Results and outputs
-results/
-*.jsonl
-*.log
-
-# Node/Web
+# Node / Web build artifacts
 web/node_modules/
 web/.next/
 web/out/
 web/dist/
 web/build/
-web/.DS_Store
 web/*.tsbuildinfo
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Temp
+# Temp / uploads
 tmp/
 temp/
 *.tmp
-
-# Uploads (third-party content)
 uploads/
+
+# Keep dashboard static assets (including traces) tracked
+!web/public/
+!web/public/**

@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 12 deterministic tasks testing specific harness failure modes
 - 6 harness layers with incremental ablation study
 - Environment-reactive mock model for offline-capable testing
-- Real LLM provider support (OpenAI and Anthropic compatible APIs)
+- Real LLM provider support (Gemini, OpenAI, and Anthropic)
+- First-class Gemini provider (default model `gemini-3.8-flash`, `GEMINI_API_KEY`, `HARNESSDIFF_GEMINI_MODEL`)
+- `harnessdiff models --provider gemini` to list live model ids
 - Task x layer success matrix showing which layer fixes which task
 - Side-by-side trace viewer in dashboard
 - Complete CLI for running tasks, ablations, and before/after comparisons
