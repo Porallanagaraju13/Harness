@@ -19,7 +19,7 @@ def test_mock_model_basic():
 
 def test_mock_model_file_creation():
     """Test mock model handles file creation scenario"""
-    model = MockModel(failure_mode="verification")
+    model = MockModel()
     
     messages = [
         Message(role="user", content="Create a file with content 'test'")
