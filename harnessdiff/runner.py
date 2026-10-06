@@ -45,12 +45,6 @@ class TaskRunner:
             trace_file = self.output_dir / f"{run_id}_{task.task_id}_trace.jsonl"
             config.trace_file = trace_file
 
-            # Also copy to web/public if it exists
-            web_public = Path("web/public")
-            if web_public.exists():
-                web_trace = web_public / f"{run_id}_{task.task_id}_trace.jsonl"
-                config.trace_file = trace_file  # Will be copied after run
-
             # Create agent
             agent = AgentLoop(
                 model=self.model,
@@ -121,12 +115,6 @@ class TaskRunner:
             metrics = self._collect_metrics(
                 task=task, config=config, trace=trace, verification=verification, agent=agent
             )
-
-            # Copy trace to web/public for dashboard
-            web_public = Path("web/public")
-            if web_public.exists() and trace_file.exists():
-                web_trace = web_public / trace_file.name
-                shutil.copy2(trace_file, web_trace)
 
             return metrics
 
