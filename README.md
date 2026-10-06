@@ -68,21 +68,23 @@ Open http://localhost:3000 to see:
 ## Latest Ablation Results
 
 ```
-Configuration      Success Rate  False Claims Made  False Claims Caught  Unsafe Blocked
-Baseline (no harness)    50.0%                  5                    0               0
-+ Tool Design            50.0%                  5                    0               0
-+ Context                50.0%                  5                    0               0
-+ Sandbox                41.7%                  6                    0               0
-+ Permissions            41.7%                  6                    0               1
-+ Retry                  66.7%                  3                    0               1
-+ Verification           66.7%                  3                    3               1
+Configuration        Success Rate  False Claims Made  False Claims Caught  Unsafe Executed  Unsafe Blocked
+Baseline (no harness)    50.0%                  5                    0                0               0
++ Tool Design            50.0%                  5                    0                0               0
++ Context                50.0%                  5                    0                0               0
++ Sandbox                41.7%                  6                    0                0               0
++ Permissions            41.7%                  6                    0                0               1
++ Retry                  66.7%                  3                    0                0               1
++ Verification           75.0%                  3                    3                0               1
 ```
 
 **Key improvements:**
-- Real success rate: **50% → 67%** (+17%)
+- Real success rate: **50% → 75%** (+25%)
 - False claims: **5 → 3** (-2 unverified claims)
-- Unsafe actions: **0 attempted → 1 blocked** (protection active)
+- False claims caught: **0 → 3** (verification feedback loop converting failures to fixes)
+- Unsafe actions: **0 executed → 1 blocked** (protection active)
 
+**Verification feedback loop**: When the agent claims done but verification fails, the system feeds concrete failure evidence back to the agent, allowing bounded fix attempts. This converts caught false claims into real successes.
 ## Task Suite
 
 12 tasks targeting specific failure modes:

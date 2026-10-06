@@ -14,7 +14,33 @@ from harnessdiff.config import HarnessConfig
 from harnessdiff.runner import TaskRunner, AblationRunner, compare_before_after
 from tasks import get_all_tasks
 
-console = Console()
+# Configure console with safe encoding for Windows
+# Try UTF-8, fall back to ASCII-safe mode if console doesn't support it
+try:
+    console = Console()
+    # Test if console can handle Unicode
+    console.print("", end="")
+except UnicodeEncodeError:
+    # Windows PowerShell with cp1252 - disable Unicode
+    console = Console(legacy_windows=False, force_terminal=True)
+
+
+# Safe checkmark and cross for Windows cp1252 compatibility
+def safe_checkmark():
+    """Return checkmark that works on Windows cp1252"""
+    try:
+        test = "✓".encode(sys.stdout.encoding or 'utf-8')
+        return "✓"
+    except (UnicodeEncodeError, AttributeError):
+        return "OK"
+
+def safe_cross():
+    """Return cross that works on Windows cp1252"""
+    try:
+        test = "✗".encode(sys.stdout.encoding or 'utf-8')
+        return "✗"
+    except (UnicodeEncodeError, AttributeError):
+        return "X"
 
 
 @click.group()
@@ -128,6 +154,9 @@ def _print_results(results, title):
     """Print task results table"""
     console.print(f"\n[bold]{title} Results:[/bold]\n")
     
+    check = safe_checkmark()
+    cross = safe_cross()
+    
     table = Table(show_header=True)
     table.add_column("Task")
     table.add_column("Real Success", style="green")
@@ -138,9 +167,9 @@ def _print_results(results, title):
     for task in results:
         table.add_row(
             task["task_id"],
-            "✓" if task["real_success"] else "✗",
-            "✓" if task["agent_claimed_success"] else "✗",
-            "✓" if task["false_claim_made"] else "",
+            check if task["real_success"] else cross,
+            check if task["agent_claimed_success"] else cross,
+            check if task["false_claim_made"] else "",
             str(task["steps"])
         )
     
@@ -157,6 +186,7 @@ def _print_ablation_summary(results):
     table.add_column("Success Rate", justify="right")
     table.add_column("False Claims Made", justify="right")
     table.add_column("False Claims Caught", justify="right")
+    table.add_column("Unsafe Executed", justify="right")
     table.add_column("Unsafe Blocked", justify="right")
     
     for run in results["runs"]:
@@ -166,6 +196,7 @@ def _print_ablation_summary(results):
         success_rate = f"{summary['real_success_rate']:.1%}"
         false_made = str(summary['false_claims_made'])
         false_caught = str(summary['false_claims_caught'])
+        unsafe_executed = str(summary.get('unsafe_executed', 0))
         unsafe_blocked = str(summary['unsafe_blocked'])
         
         # Format run name
@@ -177,7 +208,7 @@ def _print_ablation_summary(results):
         else:
             name = run_id
         
-        table.add_row(name, success_rate, false_made, false_caught, unsafe_blocked)
+        table.add_row(name, success_rate, false_made, false_caught, unsafe_executed, unsafe_blocked)
     
     console.print(table)
     console.print()
@@ -186,6 +217,8 @@ def _print_ablation_summary(results):
 def _print_before_after(comparison):
     """Print before/after comparison"""
     console.print("[bold]Before vs After:[/bold]\n")
+    
+    check = safe_checkmark()
     
     before = comparison["before"]
     after = comparison["after"]
@@ -213,9 +246,9 @@ def _print_before_after(comparison):
     
     table.add_row(
         "Unsafe Actions",
-        f"{before['unsafe_attempts']} attempted",
+        f"{before.get('unsafe_executed', 0)} executed",
         f"{after['unsafe_blocked']} blocked",
-        "✓ Protected"
+        f"{check} Protected"
     )
     
     console.print(table)

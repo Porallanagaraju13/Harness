@@ -8,10 +8,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     
     strategy:
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.10", "3.11", "3.12"]
     
     steps:
@@ -34,4 +35,4 @@ jobs:
     
     - name: Test CLI
       run: |
-        python3 harnessdiff/cli.py list-tasks
+        python harnessdiff/cli.py list-tasks

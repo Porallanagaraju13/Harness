@@ -74,7 +74,23 @@ def test_sandbox_layer():
         
         # Path within sandbox should work
         safe_path = layer._safe_path("test.txt")
-        assert str(safe_path).startswith(tmpdir)
+        
+        # Use resolved path comparison for Windows 8.3 short path compatibility
+        tmpdir_resolved = Path(tmpdir).resolve()
+        safe_path_resolved = Path(safe_path).resolve()
+        
+        # Check if safe_path is within tmpdir using is_relative_to (Python 3.9+)
+        # or manual check for older Python
+        try:
+            # Python 3.9+
+            assert safe_path_resolved.is_relative_to(tmpdir_resolved), \
+                f"Safe path {safe_path_resolved} should be within {tmpdir_resolved}"
+        except AttributeError:
+            # Fallback for older Python
+            try:
+                safe_path_resolved.relative_to(tmpdir_resolved)
+            except ValueError:
+                assert False, f"Safe path {safe_path_resolved} should be within {tmpdir_resolved}"
         
         # Absolute path outside sandbox should fail
         try:

@@ -60,3 +60,6 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+
+# Uploads (third-party content)
+uploads/

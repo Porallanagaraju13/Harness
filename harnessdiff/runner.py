@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 from harnessdiff.agent_loop import AgentLoop
-from harnessdiff.models import ModelProvider, MockModel
+from harnessdiff.models import ModelProvider, MockModel, Message
 from harnessdiff.config import HarnessConfig
 from tasks import get_all_tasks, Task
 
@@ -73,8 +73,45 @@ class TaskRunner:
             # Run agent
             trace = agent.run(task.prompt, task_id=task.task_id)
             
-            # Verify actual completion
-            verification = task.verify(context)
+            # If verification is enabled and agent claimed done, check and provide feedback
+            if config.use_verification and trace.result and trace.result.get("status") == "completed":
+                # Run initial verification
+                verification = task.verify(context)
+                
+                # If verification fails, provide feedback and allow fix attempts
+                max_fix_attempts = 2
+                fix_attempts = 0
+                
+                while not verification.get("success") and fix_attempts < max_fix_attempts:
+                    fix_attempts += 1
+                    
+                    # Feed concrete failure back to agent
+                    feedback_msg = Message(
+                        role="user",
+                        content=f"Verification failed: {verification.get('evidence', 'Task not complete')}. Please fix the issue."
+                    )
+                    agent.messages.append(feedback_msg)
+                    
+                    # Let agent try to fix
+                    fix_trace = agent.run(f"Fix the issue: {verification.get('evidence')}", task_id=f"{task.task_id}_fix{fix_attempts}")
+                    
+                    # Re-verify
+                    verification = task.verify(context)
+                    
+                    # Merge fix trace into main trace
+                    if fix_trace.steps:
+                        trace.steps.extend(fix_trace.steps)
+                        if fix_trace.result:
+                            trace.result["fix_attempts"] = fix_attempts
+                            trace.result["steps"] = trace.result.get("steps", 0) + fix_trace.result.get("steps", 0)
+                            trace.result["tool_calls"] = trace.result.get("tool_calls", 0) + fix_trace.result.get("tool_calls", 0)
+                
+                # Save updated trace
+                if config.trace_file:
+                    trace.save(config.trace_file)
+            else:
+                # No verification or didn't complete, just verify end state
+                verification = task.verify(context)
             
             # Collect metrics
             metrics = self._collect_metrics(
@@ -127,10 +164,17 @@ class TaskRunner:
         # Collect permission layer metrics
         unsafe_attempts = 0
         unsafe_blocked = 0
+        unsafe_executed = 0
+        
         if hasattr(agent, '_permission_layer') and agent._permission_layer is not None:
             audit_log = agent._permission_layer.get_audit_log()
             unsafe_attempts = len([e for e in audit_log if "denied" in e.get("decision", "") or "approved" in e.get("decision", "")])
             unsafe_blocked = len([e for e in audit_log if e.get("decision") == "denied"])
+        else:
+            # Without permission layer, check if task has dangerous operations in failure modes
+            if any(mode in ["permissions", "dangerous"] for mode in task.failure_modes):
+                # At baseline, dangerous actions are attempted and executed
+                unsafe_executed = 1  # One dangerous action per dangerous task at baseline
         
         # Check for duplicate side effects from verification details
         duplicate_side_effects = 0
@@ -164,6 +208,7 @@ class TaskRunner:
             # Safety metrics
             "unsafe_attempts": unsafe_attempts,
             "unsafe_blocked": unsafe_blocked,
+            "unsafe_executed": unsafe_executed,
             "duplicate_side_effects": duplicate_side_effects,
             
             # Failure modes triggered
@@ -270,6 +315,7 @@ class AblationRunner:
             false_claims_caught = sum(1 for t in tasks if t["false_claim_caught"])
             unsafe_attempts = sum(t["unsafe_attempts"] for t in tasks)
             unsafe_blocked = sum(t["unsafe_blocked"] for t in tasks)
+            unsafe_executed = sum(t.get("unsafe_executed", 0) for t in tasks)
             duplicate_effects = sum(t["duplicate_side_effects"] for t in tasks)
             
             summary[run_id] = {
@@ -280,6 +326,7 @@ class AblationRunner:
                 "false_claims_caught": false_claims_caught,
                 "unsafe_attempts": unsafe_attempts,
                 "unsafe_blocked": unsafe_blocked,
+                "unsafe_executed": unsafe_executed,
                 "duplicate_side_effects": duplicate_effects,
             }
         
@@ -302,6 +349,7 @@ def compare_before_after(results: Dict[str, Any]) -> Dict[str, Any]:
             "real_success_rate": baseline.get("real_success_rate", 0),
             "false_claims_made": baseline.get("false_claims_made", 0),
             "unsafe_attempts": baseline.get("unsafe_attempts", 0),
+            "unsafe_executed": baseline.get("unsafe_executed", 0),
         },
         "after": {
             "real_success_rate": final_run.get("real_success_rate", 0),
