@@ -351,13 +351,16 @@ class AblationRunner:
         return matrix
 
     def _sync_web_public(self, results_file: Path) -> None:
-        """Copy ablation JSON + traces into web/public for static export."""
+        """Copy ablation JSON + baseline/final traces into web/public."""
         web_public = Path("web/public")
         if not web_public.exists():
             return
         try:
             shutil.copy2(results_file, web_public / "ablation_results.json")
-            for trace in self.output_dir.glob("*_trace.jsonl"):
+            for trace in self.output_dir.glob("baseline_*_trace.jsonl"):
+                shutil.copy2(trace, web_public / trace.name)
+            # Final cumulative run is always layer_verification in the standard ablation
+            for trace in self.output_dir.glob("layer_verification_*_trace.jsonl"):
                 shutil.copy2(trace, web_public / trace.name)
         except OSError as exc:
             print(f"Warning: could not sync web/public: {exc}")
