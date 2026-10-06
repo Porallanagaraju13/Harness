@@ -47,13 +47,16 @@ class ContextManagementLayer:
         recent_count = 10
         recent_msgs = other_msgs[-recent_count:] if len(other_msgs) > recent_count else other_msgs
         
-        # Create summary of compacted messages
+        # Create summary of compacted messages WITH the original goal preserved
         if len(other_msgs) > recent_count:
             compacted_count = len(other_msgs) - recent_count
+            # Extract the original user goal from user_msgs
+            original_goal = user_msgs[0].content if user_msgs else "Complete the task"
             summary = Message(
                 role="system",
                 content=f"[Context compacted: {compacted_count} earlier messages summarized. "
-                       f"This is lossy as warned in Chapter 15 of the handbook.]"
+                       f"This is lossy as warned in Chapter 15 of the handbook. "
+                       f"IMPORTANT: Your original goal was: {original_goal}]"
             )
             return system_msgs + [summary] + user_msgs + recent_msgs
         

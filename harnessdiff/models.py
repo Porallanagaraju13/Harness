@@ -100,8 +100,9 @@ class MockModel(ModelProvider):
         # In real context overflow, messages list is huge and original prompt is far away
         if len(messages) > 15:  # Arbitrary threshold for "lost in context"
             # Check if we can still see the original goal
-            has_system_summary = any(m.role == "system" and ("compacted" in m.content.lower() or "goal" in m.content.lower()) for m in messages[-5:])
-            if not has_system_summary:
+            # Context management layer adds "[Context compacted... IMPORTANT: Your original goal was: ...]"
+            has_goal_reminder = any(m.role == "system" and "original goal" in m.content.lower() for m in messages[-5:])
+            if not has_goal_reminder:
                 # Lost the original goal, give up early
                 # This simulates losing track after reading a few files
                 self.task_context["gave_up_from_overflow"] = True
@@ -253,28 +254,34 @@ class MockModel(ModelProvider):
             if any(kw in tool_name_lower or kw in tool_desc for kw in task_keywords):
                 matching_tools.append((tool_name, tool_info))
         
-        if not matching_tools:
+        # Also check for overlapping search-like tools in the full tool set
+        # (they might not match our keywords but are clearly overlapping)
+        all_search_like = [t for t in tools_dict.items() if t[0] in ["search", "find", "lookup", "query", "grep"]]
+        
+        if not matching_tools and not all_search_like:
             # No matching tool found
             return Message(
                 role="assistant",
                 content="I don't have the right tool for this task."
             )
         
-        # If many overlapping tools exist (>3 with same purpose), pick non-optimal one
-        # This simulates confusion from having search/find/lookup/query/grep all available
-        if len(matching_tools) > 3 and "search" in user_msg.lower():
+        # If we have many overlapping search-like tools available, this causes confusion
+        if len(all_search_like) > 3 and ("search" in user_msg.lower() or "find" in user_msg.lower()):
             # With many overlapping search tools, pick a less optimal one (not "search")
             # Tool design layer will filter these, leaving only the best one
             # Pick "find" or "lookup" instead of "search"
-            non_optimal = [t for t in matching_tools if t[0] in ["find", "lookup", "query", "grep"]]
+            non_optimal = [t for t in all_search_like if t[0] != "search"]
             if non_optimal:
                 tool_name, tool_info = non_optimal[0]
             else:
-                # Fallback: not optimal scenario somehow
-                tool_name, tool_info = matching_tools[1] if len(matching_tools) > 1 else matching_tools[0]
-        else:
+                # Fallback
+                tool_name, tool_info = all_search_like[0]
+        elif matching_tools:
             # Pick first matching tool
             tool_name, tool_info = matching_tools[0]
+        else:
+            # Use first search-like tool
+            tool_name, tool_info = all_search_like[0]
         
         # Prepare arguments based on tool parameters
         args = self._prepare_args(tool_info, user_msg)
