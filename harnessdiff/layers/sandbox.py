@@ -72,6 +72,7 @@ class SandboxLayer:
                             path_str = str(p)
                             if any(prefix in path_str for prefix in ["/tmp/", "/var/", "/etc/", "/usr/", "/home/", "C:\\", "D:\\"]):
                                 # This is an absolute system path - block it
+                                # The return message is what the agent sees
                                 return f"Sandbox blocked: cannot access {value} (outside workspace)"
             
             # Execute with restricted environment
