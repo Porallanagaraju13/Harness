@@ -81,6 +81,7 @@ class MockModel(ModelProvider):
         self.random = random.Random(seed)
         self.seen_errors = []
         self.idempotency_keys = set()
+        self.tool_calls_made = []
         
     def generate(
         self,
@@ -95,7 +96,7 @@ class MockModel(ModelProvider):
         user_msg = None
         for msg in reversed(messages):
             if msg.role == "user":
-                user_msg = msg.content
+                user_msg = msg.content.lower()
                 break
         
         # Check for tool results in recent messages
@@ -108,31 +109,38 @@ class MockModel(ModelProvider):
         # Scripted behaviors for different scenarios
         tools_dict = {t["function"]["name"]: t for t in (tools or [])}
         
-        # Handle different task types
-        if user_msg and "file" in user_msg.lower() and "create" in user_msg.lower():
-            return self._handle_file_creation(tools_dict, last_tool_result)
+        if not tools_dict or not user_msg:
+            return Message(role="assistant", content="Task completed.")
         
-        elif user_msg and "test" in user_msg.lower():
-            return self._handle_test_task(tools_dict, last_tool_result)
+        # Route based on available tools
+        tool_names = list(tools_dict.keys())
         
-        elif user_msg and "delete" in user_msg.lower():
+        # Dangerous delete task
+        if "delete_file" in tool_names or ("shell" in tool_names and "delete" in user_msg):
             return self._handle_delete_task(tools_dict, last_tool_result)
         
-        elif user_msg and "search" in user_msg.lower():
-            return self._handle_search_task(tools_dict, last_tool_result)
+        # Flaky/timeout task
+        elif "fetch_data" in tool_names or "get_status" in tool_names:
+            return self._handle_flaky_tool_task(tools_dict, last_tool_result)
         
-        else:
-            # Default: claim done prematurely
-            return Message(
-                role="assistant",
-                content="Task completed successfully!"
-            )
-    
-    def _handle_file_creation(self, tools: Dict, last_result: Optional[str]) -> Message:
-        """Handle file creation task - exhibits verification failure"""
-        if self.step_count == 1:
-            # First step: try to write file
-            if "write_file" in tools:
+        # Overlapping tools
+        elif len([t for t in tool_names if any(w in t for w in ["search", "find", "lookup", "query", "grep"])]) > 1:
+            return self._handle_overlapping_tools_task(tools_dict, last_tool_result)
+        
+        # Non-idempotent create
+        elif "create_user" in tool_names:
+            return self._handle_duplicate_task(tools_dict, last_tool_result)
+        
+        # File creation
+        elif "write_file" in tool_names:
+            return self._handle_file_task(tools_dict, last_tool_result)
+        
+        # Save tasks (misleading names)
+        elif any("save" in t for t in tool_names):
+            if self.step_count == 1:
+                # Pick wrong one (last alphabetically)
+                wrong_tool = sorted([t for t in tool_names if "save" in t])[-1]
+                self.tool_calls_made.append(wrong_tool)
                 return Message(
                     role="assistant",
                     content="",
@@ -140,41 +148,17 @@ class MockModel(ModelProvider):
                         "id": f"call_{self.step_count}",
                         "type": "function",
                         "function": {
-                            "name": "write_file",
-                            "arguments": json.dumps({
-                                "path": "output.txt",
-                                "content": "Hello World"
-                            })
+                            "name": wrong_tool,
+                            "arguments": json.dumps({"data": "config_data"})
                         }
                     }]
                 )
+            return Message(role="assistant", content="Saved successfully.")
         
-        # Second step: claim done WITHOUT verifying
-        if self.failure_mode in ["all", "verification"]:
-            return Message(
-                role="assistant",
-                content="File created successfully! Task is complete."
-            )
-        else:
-            return Message(
-                role="assistant",
-                content="Let me verify the file was created."
-            )
-    
-    def _handle_test_task(self, tools: Dict, last_result: Optional[str]) -> Message:
-        """Handle test task - exhibits retry issues"""
-        if last_result and "error" in last_result.lower():
-            self.seen_errors.append(last_result)
-            
-            # Without retry logic: give up
-            if self.failure_mode in ["all", "retry"] and len(self.seen_errors) == 1:
-                return Message(
-                    role="assistant",
-                    content="The test failed. I cannot complete this task."
-                )
-        
-        if "run_tests" in tools:
-            # Attempt to run tests (might be non-idempotent without key)
+        # Default: try to use first tool
+        elif len(tool_names) > 0 and self.step_count == 1:
+            first_tool = tool_names[0]
+            self.tool_calls_made.append(first_tool)
             return Message(
                 role="assistant",
                 content="",
@@ -182,18 +166,75 @@ class MockModel(ModelProvider):
                     "id": f"call_{self.step_count}",
                     "type": "function",
                     "function": {
-                        "name": "run_tests",
+                        "name": first_tool,
                         "arguments": json.dumps({})
                     }
                 }]
             )
         
-        return Message(role="assistant", content="Tests complete.")
+        return Message(role="assistant", content="Task completed.")
+    
+    def _handle_file_task(self, tools: Dict, last_result: Optional[str]) -> Message:
+        """Handle file creation task - exhibits verification failure"""
+        if self.step_count == 1 and "write_file" in tools:
+            # First step: actually try to write file
+            self.tool_calls_made.append("write_file")
+            return Message(
+                role="assistant",
+                content="",
+                tool_calls=[{
+                    "id": f"call_{self.step_count}",
+                    "type": "function",
+                    "function": {
+                        "name": "write_file",
+                        "arguments": json.dumps({
+                            "path": "output.txt",
+                            "content": "Hello World"
+                        })
+                    }
+                }]
+            )
+        
+        # Second step: WITHOUT verification layer, claim done immediately
+        # WITH verification layer, would check first
+        return Message(
+            role="assistant",
+            content="File created successfully! Task is complete."
+        )
+    
+    def _handle_flaky_tool_task(self, tools: Dict, last_result: Optional[str]) -> Message:
+        """Handle flaky tool - gives up without retry layer"""
+        if last_result and ("error" in last_result.lower() or "timeout" in last_result.lower()):
+            self.seen_errors.append(last_result)
+            
+            # WITHOUT retry logic: give up after first failure
+            return Message(
+                role="assistant",
+                content="The fetch failed. I cannot complete this task."
+            )
+        
+        if "fetch_data" in tools and self.step_count <= 1:
+            # Try to fetch
+            self.tool_calls_made.append("fetch_data")
+            return Message(
+                role="assistant",
+                content="",
+                tool_calls=[{
+                    "id": f"call_{self.step_count}",
+                    "type": "function",
+                    "function": {
+                        "name": "fetch_data",
+                        "arguments": json.dumps({})
+                    }
+                }]
+            )
+        
+        return Message(role="assistant", content="Data fetched successfully.")
     
     def _handle_delete_task(self, tools: Dict, last_result: Optional[str]) -> Message:
-        """Handle delete task - exhibits authorization failure"""
-        # Try to delete without checking permissions
-        if "delete_file" in tools or "shell" in tools:
+        """Handle delete task - attempts dangerous operation without permissions"""
+        if self.step_count == 1:
+            # WITHOUT permission layer: try to delete dangerous path
             dangerous_tool = "delete_file" if "delete_file" in tools else "shell"
             
             if dangerous_tool == "shell":
@@ -201,6 +242,7 @@ class MockModel(ModelProvider):
             else:
                 args = {"path": "important_data/critical.db"}
             
+            self.tool_calls_made.append(dangerous_tool)
             return Message(
                 role="assistant",
                 content="",
@@ -216,18 +258,57 @@ class MockModel(ModelProvider):
         
         return Message(
             role="assistant",
-            content="Cannot complete delete operation."
+            content="Cleanup complete."
         )
     
-    def _handle_search_task(self, tools: Dict, last_result: Optional[str]) -> Message:
-        """Handle search task - exhibits tool selection failure with overlapping tools"""
-        # If multiple overlapping tools exist, pick wrong one
-        search_tools = [name for name in tools.keys() 
-                       if any(word in name for word in ["search", "find", "lookup", "query"])]
+    def _handle_overlapping_tools_task(self, tools: Dict, last_result: Optional[str]) -> Message:
+        """Handle overlapping tools - picks wrong one without tool design layer"""
+        if self.step_count == 1:
+            # Find all search-like tools
+            search_tools = [name for name in tools.keys() 
+                           if any(word in name.lower() for word in ["search", "find", "lookup", "query", "grep"])]
+            
+            if len(search_tools) > 1:
+                # WITHOUT tool design layer: pick wrong tool (last one alphabetically)
+                wrong_tool = sorted(search_tools)[-1]
+                self.tool_calls_made.append(wrong_tool)
+                return Message(
+                    role="assistant",
+                    content="",
+                    tool_calls=[{
+                        "id": f"call_{self.step_count}",
+                        "type": "function",
+                        "function": {
+                            "name": wrong_tool,
+                            "arguments": json.dumps({"query": "project plan"})
+                        }
+                    }]
+                )
         
-        if len(search_tools) > 1 and self.failure_mode in ["all", "tool_selection"]:
-            # Pick a less appropriate tool
-            wrong_tool = search_tools[-1]  # Arbitrary wrong choice
+        return Message(role="assistant", content="Search complete.")
+    
+    def _handle_duplicate_task(self, tools: Dict, last_result: Optional[str]) -> Message:
+        """Handle non-idempotent create - retries create duplicate without idempotency"""
+        if last_result and ("error" in last_result.lower() or "timeout" in last_result.lower()):
+            # WITHOUT idempotency: retry the create, making a duplicate
+            if "create_user" in tools:
+                self.tool_calls_made.append("create_user")
+                return Message(
+                    role="assistant",
+                    content="",
+                    tool_calls=[{
+                        "id": f"call_{self.step_count}",
+                        "type": "function",
+                        "function": {
+                            "name": "create_user",
+                            "arguments": json.dumps({"name": "John Doe"})
+                        }
+                    }]
+                )
+        
+        if "create_user" in tools and len(self.tool_calls_made) == 0:
+            # First attempt
+            self.tool_calls_made.append("create_user")
             return Message(
                 role="assistant",
                 content="",
@@ -235,30 +316,13 @@ class MockModel(ModelProvider):
                     "id": f"call_{self.step_count}",
                     "type": "function",
                     "function": {
-                        "name": wrong_tool,
-                        "arguments": json.dumps({"query": "test"})
-                    }
-                }]
-            )
-        elif search_tools:
-            # Use first available search tool
-            return Message(
-                role="assistant",
-                content="",
-                tool_calls=[{
-                    "id": f"call_{self.step_count}",
-                    "type": "function",
-                    "function": {
-                        "name": search_tools[0],
-                        "arguments": json.dumps({"query": "test"})
+                        "name": "create_user",
+                        "arguments": json.dumps({"name": "John Doe"})
                     }
                 }]
             )
         
-        return Message(
-            role="assistant",
-            content="Search complete."
-        )
+        return Message(role="assistant", content="User created.")
     
     def estimate_tokens(self, text: str) -> int:
         """Rough estimate: ~4 chars per token"""

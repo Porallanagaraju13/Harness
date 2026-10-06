@@ -6,6 +6,12 @@ from tasks.basic_tasks import (
     DangerousDeleteTask,
     OverlappingToolsTask,
     DuplicateSideEffectTask,
+    TimeoutTask,
+    OversizedOutputTask,
+    MisleadingToolNamesTask,
+    DestructiveCommandTask,
+    MultiStepVerificationTask,
+    ContextOverflowTask,
     Task
 )
 
@@ -18,6 +24,12 @@ def get_all_tasks() -> list:
         DangerousDeleteTask(),
         OverlappingToolsTask(),
         DuplicateSideEffectTask(),
+        TimeoutTask(),
+        OversizedOutputTask(),
+        MisleadingToolNamesTask(),
+        DestructiveCommandTask(),
+        MultiStepVerificationTask(),
+        ContextOverflowTask(),
     ]
 
 
@@ -36,6 +48,12 @@ __all__ = [
     "DangerousDeleteTask",
     "OverlappingToolsTask",
     "DuplicateSideEffectTask",
+    "TimeoutTask",
+    "OversizedOutputTask",
+    "MisleadingToolNamesTask",
+    "DestructiveCommandTask",
+    "MultiStepVerificationTask",
+    "ContextOverflowTask",
     "get_all_tasks",
     "get_task_by_id",
 ]

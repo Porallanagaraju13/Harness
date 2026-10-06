@@ -141,6 +141,10 @@ class AgentLoop:
         from harnessdiff.layers.retry import RetryLayer
         from harnessdiff.layers.verification import VerificationLayer
         
+        # Store layer instances for metrics collection
+        self._permission_layer = None
+        self._retry_layer = None
+        
         # Wrap tools with layers
         if self.config.use_distinct_tools:
             tool_layer = ToolDesignLayer(self.config)
@@ -154,10 +158,12 @@ class AgentLoop:
         if self.config.use_permissions:
             perm_layer = PermissionLayer(self.config)
             self.tools = perm_layer.wrap_tools(self.tools)
+            self._permission_layer = perm_layer  # Store for metrics
         
         if self.config.use_retry_logic:
             retry_layer = RetryLayer(self.config)
             self.tools = retry_layer.wrap_tools(self.tools)
+            self._retry_layer = retry_layer  # Store for metrics
         
         # Context and verification are handled in the loop itself
         self.context_layer = None

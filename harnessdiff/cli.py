@@ -140,7 +140,7 @@ def _print_results(results, title):
             task["task_id"],
             "✓" if task["real_success"] else "✗",
             "✓" if task["agent_claimed_success"] else "✗",
-            "✓" if task["false_claim"] else "",
+            "✓" if task["false_claim_made"] else "",
             str(task["steps"])
         )
     
@@ -155,7 +155,8 @@ def _print_ablation_summary(results):
     table = Table(show_header=True)
     table.add_column("Configuration")
     table.add_column("Success Rate", justify="right")
-    table.add_column("False Claims", justify="right")
+    table.add_column("False Claims Made", justify="right")
+    table.add_column("False Claims Caught", justify="right")
     table.add_column("Unsafe Blocked", justify="right")
     
     for run in results["runs"]:
@@ -163,7 +164,8 @@ def _print_ablation_summary(results):
         summary = results["summary"][run_id]
         
         success_rate = f"{summary['real_success_rate']:.1%}"
-        false_claims = str(summary['false_claims'])
+        false_made = str(summary['false_claims_made'])
+        false_caught = str(summary['false_claims_caught'])
         unsafe_blocked = str(summary['unsafe_blocked'])
         
         # Format run name
@@ -175,7 +177,7 @@ def _print_ablation_summary(results):
         else:
             name = run_id
         
-        table.add_row(name, success_rate, false_claims, unsafe_blocked)
+        table.add_row(name, success_rate, false_made, false_caught, unsafe_blocked)
     
     console.print(table)
     console.print()
@@ -203,9 +205,9 @@ def _print_before_after(comparison):
     )
     
     table.add_row(
-        "False Claims",
-        str(before['false_claims']),
-        str(after['false_claims']),
+        "False Claims Made",
+        str(before['false_claims_made']),
+        str(after['false_claims_made']),
         f"-{improvement['false_claims_reduced']}" if improvement['false_claims_reduced'] > 0 else "0"
     )
     
