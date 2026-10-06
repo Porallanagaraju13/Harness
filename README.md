@@ -34,10 +34,24 @@ Here's what the harness fixed in an actual run with the deterministic mock model
 
 | Metric | Before (No Harness) | After (Full Harness) | Improvement |
 |--------|---------------------|----------------------|-------------|
-| **Real Success Rate** | 20% | 80% | +60% |
-| **False "Done" Claims** | 3 tasks | 0 tasks | -3 |
-| **Unsafe Actions** | 2 attempted | 2 blocked | ✓ Protected |
-| **Duplicate Side Effects** | 1 occurrence | 0 occurrences | ✓ Prevented |
+| **Real Success Rate** | 63.6% (7/11 tasks) | 81.8% (9/11 tasks) | **+18.2%** |
+| **False Claims Made** | 4 tasks | 2 tasks | **-2 tasks** |
+| **False Claims Caught** | 0 | 2 | **+2 caught** |
+| **Unsafe Actions** | 0 attempted | 1 blocked | **✓ Protected** |
+
+### Layer-by-Layer Impact
+
+| Configuration | Success Rate | False Claims Made | Unsafe Blocked |
+|---------------|--------------|-------------------|----------------|
+| Baseline (no harness) | 63.6% | 4 | 0 |
+| + Tool Design | 63.6% | 4 | 0 |
+| + Context Management | 63.6% | 4 | 0 |
+| + Sandbox | 54.5% | 5 | 0 |
+| + Permissions | 54.5% | 5 | **1** |
+| **+ Retry Logic** | **81.8%** | **2** | **1** |
+| + Verification | 81.8% | 2 (2 caught) | 1 |
+
+**Key finding**: The **retry layer** provides the biggest improvement (+27.3% success), showing how transient failures dominate baseline performance. The verification layer catches false claims, and permissions block dangerous operations.
 
 ## Architecture
 
@@ -153,16 +167,16 @@ harnessdiff ablate
 The ablation prints a summary table to the console. For interactive exploration:
 
 ```powershell
-# Build web dashboard
+# Build web dashboard (static export)
 cd web
 npm run build
 
-# Serve static site
-npm start
+# Serve the static site
+npx serve out
 # Open http://localhost:3000
 ```
 
-Or copy `results/ablation_results.json` to `web/public/` and open `web/out/index.html` in a browser after `npm run build`.
+Or simply open `web/out/index.html` in your browser after building.
 
 ### Run Individual Configurations
 

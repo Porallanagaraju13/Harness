@@ -13,7 +13,8 @@ interface AblationResults {
       task_description: string
       real_success: boolean
       agent_claimed_success: boolean
-      false_claim: boolean
+      false_claim_made: boolean
+      false_claim_caught: boolean
       steps: number
       verification: any
     }>
@@ -22,7 +23,8 @@ interface AblationResults {
     total_tasks: number
     real_success_count: number
     real_success_rate: number
-    false_claims: number
+    false_claims_made: number
+    false_claims_caught: number
     unsafe_attempts: number
     unsafe_blocked: number
   }>
@@ -106,8 +108,13 @@ export default function Home() {
                     ✓ {summary.real_success_count}/{summary.total_tasks}
                   </span>
                   <span className={styles.stat}>
-                    ✗ {summary.false_claims} false claims
+                    ✗ {summary.false_claims_made} false claims
                   </span>
+                  {summary.false_claims_caught > 0 && (
+                    <span className={styles.stat}>
+                      🔍 {summary.false_claims_caught} caught
+                    </span>
+                  )}
                   {summary.unsafe_blocked > 0 && (
                     <span className={styles.stat}>
                       🛡️ {summary.unsafe_blocked} blocked
@@ -138,9 +145,15 @@ export default function Home() {
                       </span>
                     </div>
                     <div className={styles.metric}>
-                      <span className={styles.metricLabel}>False Claims</span>
+                      <span className={styles.metricLabel}>False Claims Made</span>
                       <span className={styles.metricValue}>
-                        {baseline.false_claims}
+                        {baseline.false_claims_made}
+                      </span>
+                    </div>
+                    <div className={styles.metric}>
+                      <span className={styles.metricLabel}>False Claims Caught</span>
+                      <span className={styles.metricValue}>
+                        0
                       </span>
                     </div>
                     <div className={styles.metric}>
@@ -169,9 +182,15 @@ export default function Home() {
                       </span>
                     </div>
                     <div className={styles.metric}>
-                      <span className={styles.metricLabel}>False Claims</span>
+                      <span className={styles.metricLabel}>False Claims Made</span>
                       <span className={styles.metricValue}>
-                        {final.false_claims}
+                        {final.false_claims_made}
+                      </span>
+                    </div>
+                    <div className={styles.metric}>
+                      <span className={styles.metricLabel}>False Claims Caught</span>
+                      <span className={styles.metricValue}>
+                        {final.false_claims_caught}
                       </span>
                     </div>
                     <div className={styles.metric}>
@@ -205,17 +224,17 @@ export default function Home() {
                 <div key={task.task_id} className={styles.taskCard}>
                   <h4 className={styles.taskTitle}>{task.task_description}</h4>
                   <div className={styles.taskStatus}>
-                    <span className={task.real_success ? styles.success : styles.failure}>
-                      {task.real_success ? '✓' : '✗'} Real: {task.real_success ? 'Success' : 'Failed'}
+                  <span className={task.real_success ? styles.success : styles.failure}>
+                    {task.real_success ? '✓' : '✗'} Real: {task.real_success ? 'Success' : 'Failed'}
+                  </span>
+                  <span className={task.agent_claimed_success ? styles.success : styles.failure}>
+                    {task.agent_claimed_success ? '✓' : '✗'} Agent Claimed: {task.agent_claimed_success ? 'Success' : 'Failed'}
+                  </span>
+                  {task.false_claim_made && (
+                    <span className={styles.warning}>
+                      ⚠️ False Claim {task.false_claim_caught ? '(Caught by Verifier)' : '(Uncaught)'}
                     </span>
-                    <span className={task.agent_claimed_success ? styles.success : styles.failure}>
-                      {task.agent_claimed_success ? '✓' : '✗'} Agent Claimed: {task.agent_claimed_success ? 'Success' : 'Failed'}
-                    </span>
-                    {task.false_claim && (
-                      <span className={styles.warning}>
-                        ⚠️ False Claim
-                      </span>
-                    )}
+                  )}
                   </div>
                   <p className={styles.taskEvidence}>
                     {task.verification.evidence}

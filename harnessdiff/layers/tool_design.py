@@ -54,31 +54,69 @@ class ToolDesignLayer:
     
     def improve_schemas(self, schemas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Improve tool schemas with clear descriptions.
+        Improve tool schemas with clear, distinct descriptions.
         
         Chapter 7: "Tools are part of the model input"
         Tool names and descriptions affect inference before tools are called.
+        
+        For overlapping tools, keep only the most appropriate one.
         """
-        improved = []
+        # First, remove truly overlapping tools (multiple search/find/lookup/query)
+        overlap_groups = [
+            ["search", "find", "lookup", "query", "grep", "retrieve"],
+        ]
+        
+        seen_in_group = {}
+        filtered_schemas = []
         
         for schema in schemas:
-            # Make descriptions more distinct and clear
+            func_name = schema["function"]["name"].lower()
+            
+            # Check if this tool is in an overlap group
+            in_group = None
+            for idx, group in enumerate(overlap_groups):
+                if any(keyword in func_name for keyword in group):
+                    in_group = idx
+                    break
+            
+            if in_group is not None:
+                # Only keep first from each overlap group
+                if in_group not in seen_in_group:
+                    seen_in_group[in_group] = True
+                    filtered_schemas.append(schema)
+            else:
+                # Not in overlap group, keep it
+                filtered_schemas.append(schema)
+        
+        # Now improve descriptions of remaining tools
+        improved = []
+        for schema in filtered_schemas:
             improved_schema = schema.copy()
             
             if "function" in improved_schema:
-                func = improved_schema["function"]
+                func = improved_schema["function"].copy()
+                improved_schema["function"] = func
                 
-                # Enhance description to be more specific
-                if "description" in func:
-                    desc = func["description"]
-                    
-                    # Add usage guidance
-                    if "search" in func["name"].lower():
-                        func["description"] = f"{desc} Use this to search for content."
-                    elif "read" in func["name"].lower():
-                        func["description"] = f"{desc} Use this to read existing files."
-                    elif "write" in func["name"].lower():
-                        func["description"] = f"{desc} Use this to create or modify files."
+                name = func["name"].lower()
+                
+                # Make descriptions more specific and actionable
+                if "search" in name or "find" in name:
+                    func["description"] = "Search for and retrieve matching items. Use for finding specific content."
+                elif "write" in name or "create" in name:
+                    func["description"] = "Write or create new content. Use for creating files or records."
+                elif "read" in name or "get" in name:
+                    func["description"] = "Read or retrieve existing content. Use for accessing data."
+                elif "delete" in name or "remove" in name:
+                    func["description"] = "Delete or remove content. Dangerous: requires confirmation."
+                elif "save" in name:
+                    if "config" in name:
+                        func["description"] = "Save configuration settings to persistent storage."
+                    elif "backup" in name:
+                        func["description"] = "Create a backup copy (does not save main config)."
+                    elif "log" in name:
+                        func["description"] = "Save log entry (does not save main config)."
+                elif "list" in name:
+                    func["description"] = "List available items or files."
             
             improved.append(improved_schema)
         

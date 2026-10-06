@@ -79,10 +79,13 @@ class PermissionLayer:
                 })
                 
                 if self.config.auto_deny_dangerous:
-                    return f"Permission denied: {tool_name} is a dangerous operation"
+                    # Provide guidance on safer alternative
+                    if "delete" in tool_name.lower() or "rm" in str(kwargs).lower():
+                        return (f"Permission denied: {tool_name} on sensitive path. "
+                               f"Use list_files to see safe paths, or target only temp_* directories.")
+                    return f"Permission denied: {tool_name} is a dangerous operation. Check policy."
                 else:
                     # Simulate approval (in real system, would be async)
-                    # For batch runs, we auto-approve after logging
                     self.audit_log[-1]["decision"] = "approved_simulated"
             
             # Execute
