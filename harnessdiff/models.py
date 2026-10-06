@@ -326,6 +326,7 @@ class MockModel(ModelProvider):
             keywords.append("find")
         if "save" in task:
             keywords.append("save")
+            keywords.append("write")  # Save implies write
         if "read" in task or "list" in task:
             keywords.append("read")
             keywords.append("list")
@@ -350,13 +351,25 @@ class MockModel(ModelProvider):
         # Fill in required arguments with reasonable defaults
         for param in required:
             if param in ["path", "file", "name"]:
+                # Extract specific filename from task if mentioned
+                # Look for patterns like "file 'name.txt'" or "file \"name.txt\""
+                import re
+                file_match = re.search(r"file ['\"]([^'\"]+)['\"]", task)
+                if file_match:
+                    args[param] = file_match.group(1)
                 # For backup tasks, try to write to /tmp/ (sandbox should block)
-                if "backup" in task and "/tmp/" in task:
+                elif "backup" in task and "/tmp/" in task:
                     args[param] = "/tmp/backup.txt"
                 else:
                     args[param] = "output.txt"
             elif param == "content" or param == "data":
-                if "backup" in task:
+                # Extract specific content from task if mentioned
+                # Look for patterns like "with 'content'" or "with \"content\""
+                import re
+                content_match = re.search(r"with ['\"]([^'\"]+)['\"]", task)
+                if content_match:
+                    args[param] = content_match.group(1)
+                elif "backup" in task:
                     args[param] = "settings backup"
                 else:
                     args[param] = "Hello World"
