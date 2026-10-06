@@ -1,64 +1,172 @@
 # Contributing to HarnessDiff
 
-Thank you for your interest in contributing to HarnessDiff!
+Thank you for your interest in contributing!
 
 ## Development Setup
 
-1. Clone the repository
-2. Install in development mode:
-   ```bash
-   pip install -e ".[dev]"
-   ```
+```bash
+# Clone the repository
+git clone <repo-url>
+cd harnessdiff
 
-3. Run tests:
-   ```bash
-   pytest
-   ```
+# Install in development mode
+pip install -e .
+
+# Install dev dependencies
+pip install pytest pytest-cov black mypy
+
+# Run tests
+pytest
+```
 
 ## Project Structure
 
-- `harnessdiff/` - Core agent loop and harness layers
-- `tasks/` - Task definitions with deterministic checks
-- `web/` - Dashboard for visualizing results
-- `tests/` - Test suite
+```
+harnessdiff/
+├── agent_loop.py      # Core agent loop
+├── models.py          # Model providers
+├── config.py          # Configuration
+├── layers/            # Harness layers (6 total)
+├── runner.py          # Task runner + ablation
+└── cli.py             # Command-line interface
 
-## Adding Components
+tasks/
+├── basic_tasks.py     # Task definitions
+└── __init__.py        # Task registry
 
-### Adding a Task
+tests/
+├── test_agent_loop.py
+├── test_layers.py
+├── test_models.py
+├── test_tasks.py
+└── test_integration.py
 
-1. Create a new task class in `tasks/`
-2. Implement `setup()`, `verify()`, and `description` property
-3. Add failure injections if relevant
-4. Register in `tasks/__init__.py`
+web/                   # Next.js dashboard
+```
 
-### Adding a Harness Layer
+## Adding a New Task
 
-1. Create a new layer class in `harnessdiff/layers/`
-2. Implement the layer interface (wrap model or tools)
-3. Add configuration in `harnessdiff/config.py`
+1. Define task class in `tasks/basic_tasks.py`:
+
+```python
+class MyTask(Task):
+    @property
+    def task_id(self) -> str:
+        return "my_task"
+    
+    @property
+    def description(self) -> str:
+        return "Short description"
+    
+    @property
+    def prompt(self) -> str:
+        return "Instruction for the agent"
+    
+    @property
+    def failure_modes(self) -> List[str]:
+        return ["verification", "retry", "permissions"]
+    
+    def setup(self, work_dir: Path) -> Dict[str, Any]:
+        """Setup environment and return tools"""
+        context = {"work_dir": work_dir}
+        # ... define tools ...
+        return context
+    
+    def verify(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Verify task completion"""
+        return {
+            "success": True/False,
+            "evidence": "What was checked",
+            "details": {}
+        }
+```
+
+2. Register in `tasks/__init__.py`:
+
+```python
+from tasks.basic_tasks import MyTask
+
+def get_all_tasks() -> List[Task]:
+    return [
+        # ... existing tasks ...
+        MyTask(),
+    ]
+```
+
+3. Add tests in `tests/test_tasks.py`
+
+## Adding a New Layer
+
+1. Create `harnessdiff/layers/my_layer.py`:
+
+```python
+class MyLayer:
+    def __init__(self, config: HarnessConfig):
+        self.config = config
+    
+    def wrap_tools(self, tools: Dict[str, Callable]) -> Dict[str, Callable]:
+        """Wrap tools with layer logic"""
+        wrapped = {}
+        for name, fn in tools.items():
+            wrapped[name] = self._wrap(fn)
+        return wrapped
+    
+    def _wrap(self, tool_fn: Callable) -> Callable:
+        def wrapper(**kwargs):
+            # Pre-execution logic
+            result = tool_fn(**kwargs)
+            # Post-execution logic
+            return result
+        return wrapper
+```
+
+2. Add config flag in `harnessdiff/config.py`
+3. Integrate in `agent_loop.py` `_apply_layers()`
 4. Add tests in `tests/test_layers.py`
 
-### Adding a Model Provider
+## Running Tests
 
-1. Implement the `ModelProvider` interface in `harnessdiff/models.py`
-2. Add API key handling in environment variables
-3. Document usage in README
+```bash
+# All tests
+pytest
+
+# Specific test file
+pytest tests/test_layers.py
+
+# With coverage
+pytest --cov=harnessdiff --cov-report=html
+
+# Verbose
+pytest -xvs
+```
 
 ## Code Style
 
-- Use type hints where practical
-- Follow PEP 8 conventions
-- Write tests for new functionality
-- Keep cross-platform compatibility (Windows + Linux)
+- Use **black** for formatting: `black harnessdiff/ tasks/ tests/`
+- Use **type hints** where practical
+- Add **docstrings** to public functions
+- Keep functions focused and testable
 
-## Pull Requests
+## Pull Request Guidelines
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes with tests
-4. Ensure all tests pass
-5. Submit a pull request with a clear description
+1. **Fork and branch**: Create a feature branch from `main`
+2. **Tests**: Add tests for new features
+3. **Pass CI**: Ensure `pytest` passes
+4. **Documentation**: Update README if adding user-facing features
+5. **Commit messages**: Use clear, descriptive commits
+
+## Reporting Issues
+
+Please include:
+- Python version
+- Steps to reproduce
+- Expected vs actual behavior
+- Relevant logs or error messages
 
 ## Questions?
 
-Open an issue for questions or discussions about features and architecture.
+Open an issue or discussion on GitHub.
+
+---
+
+Thank you for contributing to HarnessDiff!

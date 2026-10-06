@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import styles from './page.module.css'
+import TraceViewer from './components/TraceViewer'
 
 interface AblationResults {
   timestamp: string
@@ -33,16 +34,54 @@ interface AblationResults {
 export default function Home() {
   const [results, setResults] = useState<AblationResults | null>(null)
   const [error, setError] = useState<string>('')
+  const [selectedTask, setSelectedTask] = useState<string | null>(null)
+  const [traces, setTraces] = useState<Record<string, any>>({})
 
   useEffect(() => {
-    // Try to load results from file
+    // Load results
     fetch('/ablation_results.json')
       .then(res => res.json())
-      .then(data => setResults(data))
+      .then(data => {
+        setResults(data)
+        // Load traces for all tasks
+        loadTraces(data)
+      })
       .catch(err => {
         setError('No results found. Run `harnessdiff ablate` first to generate data.')
       })
   }, [])
+
+  const loadTraces = async (data: AblationResults) => {
+    const baselineRun = data.runs.find(r => r.run_id === 'baseline')
+    const fullRun = data.runs[data.runs.length - 1]
+    
+    if (!baselineRun || !fullRun) return
+    
+    const newTraces: Record<string, any> = {}
+    
+    for (const task of baselineRun.tasks) {
+      try {
+        const baselineTrace = await fetch(`/baseline_${task.task_id}_trace.jsonl`)
+          .then(res => res.text())
+          .then(text => text.trim().split('\n').map(line => JSON.parse(line)))
+        
+        const fullTraceRun = data.runs[data.runs.length - 1].run_id
+        const fullTrace = await fetch(`/${fullTraceRun}_${task.task_id}_trace.jsonl`)
+          .then(res => res.text())
+          .then(text => text.trim().split('\n').map(line => JSON.parse(line)))
+        
+        newTraces[task.task_id] = {
+          baseline: baselineTrace,
+          full: fullTrace,
+          description: task.task_description
+        }
+      } catch (e) {
+        // Trace file not found, skip
+      }
+    }
+    
+    setTraces(newTraces)
+  }
 
   if (error) {
     return (
@@ -66,17 +105,32 @@ export default function Home() {
 
   return (
     <main className={styles.main}>
-      <header className={styles.header}>
-        <h1 className={styles.title}>HarnessDiff</h1>
-        <p className={styles.subtitle}>
-          See exactly what each agent harness layer fixes
-        </p>
-        <p className={styles.credit}>
-          Based on "Understanding Harness Engineering" by @techNmak
-        </p>
-      </header>
+      {selectedTask && traces[selectedTask] && (
+        <div className={styles.backButton}>
+          <button onClick={() => setSelectedTask(null)}>← Back to Results</button>
+        </div>
+      )}
+      
+      {selectedTask && traces[selectedTask] ? (
+        <TraceViewer
+          taskId={selectedTask}
+          baselineTrace={traces[selectedTask].baseline}
+          fullTrace={traces[selectedTask].full}
+          taskDescription={traces[selectedTask].description}
+        />
+      ) : (
+        <>
+          <header className={styles.header}>
+            <h1 className={styles.title}>HarnessDiff</h1>
+            <p className={styles.subtitle}>
+              See exactly what each agent harness layer fixes
+            </p>
+            <p className={styles.credit}>
+              Based on "Understanding Harness Engineering" by @techNmak
+            </p>
+          </header>
 
-      <section className={styles.section}>
+          <section className={styles.section}>
         <h2 className={styles.sectionTitle}>📊 Ablation Results</h2>
         <p className={styles.sectionDesc}>
           Adding harness layers one at a time, measuring impact
@@ -221,7 +275,12 @@ export default function Home() {
             
             <div className={styles.taskGrid}>
               {run.tasks.map(task => (
-                <div key={task.task_id} className={styles.taskCard}>
+                <div 
+                  key={task.task_id} 
+                  className={styles.taskCard}
+                  onClick={() => setSelectedTask(task.task_id)}
+                  style={{cursor: 'pointer'}}
+                >
                   <h4 className={styles.taskTitle}>{task.task_description}</h4>
                   <div className={styles.taskStatus}>
                   <span className={task.real_success ? styles.success : styles.failure}>
@@ -240,7 +299,7 @@ export default function Home() {
                     {task.verification.evidence}
                   </p>
                   <p className={styles.taskMeta}>
-                    {task.steps} steps
+                    {task.steps} steps | 🔍 Click to view trace
                   </p>
                 </div>
               ))}
@@ -254,6 +313,8 @@ export default function Home() {
           Generated {new Date(results.timestamp).toLocaleString()}
         </p>
       </footer>
-    </main>
+    </>
+  )}
+  </main>
   )
 }

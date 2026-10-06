@@ -309,8 +309,15 @@ class AgentLoop:
             return "continue"
         
         else:
-            # Final answer
+            # Final answer - agent claims done
             step.action = {"type": "final_answer", "content": response.content}
+            
+            # If verification layer is enabled, verify completion and provide feedback
+            if self.verification_layer and self.verification_layer.verifier:
+                # Verification happens here but we need context from runner
+                # For now, just mark that agent claimed done
+                step.metadata["claimed_done"] = True
+            
             trace.steps.append(step)
             return "final"
     

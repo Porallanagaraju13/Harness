@@ -87,12 +87,25 @@ class MockModel(ModelProvider):
         # Extract recent context
         user_msg = None
         last_tool_result = None
+        initial_goal = None
         
         for msg in reversed(messages):
             if msg.role == "user" and not user_msg:
                 user_msg = msg.content.lower()
             if msg.role == "tool" and not last_tool_result:
                 last_tool_result = msg.content
+        
+        # Check if we've lost the original goal (context overflow without compaction)
+        # In real context overflow, messages list is huge and original prompt is far away
+        if len(messages) > 15:  # Arbitrary threshold for "lost in context"
+            # Check if we can still see the original goal
+            has_system_summary = any(m.role == "system" and "goal" in m.content.lower() for m in messages[-5:])
+            if not has_system_summary:
+                # Lost the original goal, give up
+                return Message(
+                    role="assistant",
+                    content="I've lost track of what I was supposed to do. Too much context."
+                )
         
         if not user_msg:
             return Message(role="assistant", content="No task.")
@@ -118,16 +131,17 @@ class MockModel(ModelProvider):
                 )
             
             # If we see verification failure with concrete feedback, try to fix
-            if any(word in last_tool_result.lower() for word in ["missing", "not found", "wrong", "incorrect"]):
+            if any(word in last_tool_result.lower() for word in ["missing", "not found", "wrong", "incorrect", "verification failed"]):
                 # Verifier gave us concrete feedback
                 if self.step_count < 5:  # Bounded fix attempts
-                    # Try again with a simple retry
+                    # Extract what needs fixing from the feedback
                     if "write_file" in tools_dict:
+                        # Try to fix the file issue
                         return Message(
                             role="assistant",
                             content="",
                             tool_calls=[{
-                                "id": f"call_{self.step_count}",
+                                "id": f"call_{self.step_count}_fix",
                                 "type": "function",
                                 "function": {
                                     "name": "write_file",
@@ -135,6 +149,20 @@ class MockModel(ModelProvider):
                                         "path": "output.txt",
                                         "content": "Hello World"
                                     })
+                                }
+                            }]
+                        )
+                    elif "read_file" in tools_dict:
+                        # Try reading a different file
+                        return Message(
+                            role="assistant",
+                            content="",
+                            tool_calls=[{
+                                "id": f"call_{self.step_count}_fix",
+                                "type": "function",
+                                "function": {
+                                    "name": "read_file",
+                                    "arguments": json.dumps({"name": "file25.txt"})
                                 }
                             }]
                         )

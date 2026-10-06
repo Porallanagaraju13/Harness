@@ -12,6 +12,7 @@ from tasks.basic_tasks import (
     DestructiveCommandTask,
     MultiStepVerificationTask,
     ContextOverflowTask,
+    OutOfWorkspaceWriteTask,
     Task
 )
 
@@ -30,6 +31,7 @@ def get_all_tasks() -> list:
         DestructiveCommandTask(),
         MultiStepVerificationTask(),
         ContextOverflowTask(),
+        OutOfWorkspaceWriteTask(),
     ]
 
 
@@ -54,6 +56,7 @@ __all__ = [
     "DestructiveCommandTask",
     "MultiStepVerificationTask",
     "ContextOverflowTask",
+    "OutOfWorkspaceWriteTask",
     "get_all_tasks",
     "get_task_by_id",
 ]

@@ -1,391 +1,161 @@
 # HarnessDiff
 
-**A lab that shows exactly what each agent harness layer fixes.**
+**See exactly what each agent harness layer fixes**
 
-HarnessDiff runs the same agent on the same tasks twice: once with NO harness ("before") and once with a full harness ("after"), measuring exactly what each layer contributes.
+A hands-on testing lab demonstrating the impact of agent harness engineering. Based on the handbook *"Understanding Harness Engineering"* by @techNmak.
 
-Based on [**"Understanding Harness Engineering"**](https://github.com/techNmak/understanding-harness-engineering) by [@techNmak](https://github.com/techNmak) — a 48-page handbook on agent loops, tool design, MCP, context management, sandboxes, permissions, retries, verification, and long-running agents.
+## What is this?
 
-## The Problem
+HarnessDiff runs agent tasks **twice**:
+- **Before**: Bare agent with no harness layers (baseline)
+- **After**: Full harness with all 6 layers enabled
 
-A capable language model is not, by itself, a working agent. Something has to:
-- Decide what the model sees (Chapter 12)
-- Expose the actions it can take (Chapters 5-10)
-- Execute those actions safely (Chapters 18-22)
-- Return useful observations (Chapter 9)
-- Enforce permissions (Chapter 20)
-- Recover from failures (Chapters 29-31)
-- Verify real completion (Chapter 25)
+Then it runs an **ablation study** adding one layer at a time to measure incremental impact.
 
-**That surrounding machinery is the harness.**
+## The 6 Harness Layers
 
-Without it, agents exhibit predictable failure modes:
-- Claim success without verifying (verification failure)
-- Retry non-idempotent operations, creating duplicates (recovery failure)
-- Pick the wrong tool among overlapping names (tool-selection failure)
-- Attempt unsafe operations (authorization failure)
-- Give up on transient errors (retry failure)
+1. **Tool Design** - Filters overlapping tools, enriches descriptions
+2. **Context Management** - Compacts context to preserve goals
+3. **Sandbox** - Blocks out-of-workspace file operations
+4. **Permissions** - Blocks dangerous commands, provides safer alternatives
+5. **Retry + Idempotency** - Retries flaky tools, prevents duplicate side effects
+6. **Verification** - Catches false completion claims, feeds back concrete failures
 
-HarnessDiff makes these failures observable and measurable.
+## Quick Start
 
-## Quick Results
-
-Here's what the harness fixed in an actual run with the deterministic mock model:
-
-| Metric | Before (No Harness) | After (Full Harness) | Improvement |
-|--------|---------------------|----------------------|-------------|
-| **Real Success Rate** | 63.6% (7/11 tasks) | 81.8% (9/11 tasks) | **+18.2%** |
-| **False Claims Made** | 4 tasks | 2 tasks | **-2 tasks** |
-| **False Claims Caught** | 0 | 2 | **+2 caught** |
-| **Unsafe Actions** | 0 attempted | 1 blocked | **✓ Protected** |
-
-### Layer-by-Layer Impact
-
-| Configuration | Success Rate | False Claims Made | Unsafe Blocked |
-|---------------|--------------|-------------------|----------------|
-| Baseline (no harness) | 63.6% | 4 | 0 |
-| + Tool Design | 63.6% | 4 | 0 |
-| + Context Management | 63.6% | 4 | 0 |
-| + Sandbox | 54.5% | 5 | 0 |
-| + Permissions | 54.5% | 5 | **1** |
-| **+ Retry Logic** | **81.8%** | **2** | **1** |
-| + Verification | 81.8% | 2 (2 caught) | 1 |
-
-**Key finding**: The **retry layer** provides the biggest improvement (+27.3% success), showing how transient failures dominate baseline performance. The verification layer catches false claims, and permissions block dangerous operations.
-
-## Architecture
-
-```mermaid
-graph TB
-    Task[Task Prompt] --> Loop[Agent Loop]
-    Loop --> Context[Context Selection]
-    Context --> Model[Language Model]
-    Model --> Action{Action or Final?}
-    Action -->|Tool Call| Router[Tool Router]
-    Router --> Permission[Permission Check]
-    Permission --> Sandbox[Sandboxed Execution]
-    Sandbox --> Retry[Retry Logic]
-    Retry --> Observe[Observation]
-    Observe --> Verify[Verification]
-    Verify --> Loop
-    Action -->|Final Answer| End[End]
-    
-    style Loop fill:#667eea
-    style Permission fill:#f87171
-    style Sandbox fill:#4ade80
-    style Verify fill:#fbbf24
-```
-
-### Harness Layers
-
-Each layer can be independently enabled/disabled:
-
-1. **Tool Design** (Chapters 5-10)
-   - Remove overlapping tools (search/find/lookup/query → search)
-   - Return high-signal, concise results
-   - Improve tool descriptions for clarity
-
-2. **Context Management** (Chapters 12-15)
-   - Select relevant messages for each inference
-   - Compact long histories (lossy but bounded)
-   - Preserve recent context and task state
-
-3. **Sandbox** (Chapters 18-19)
-   - Isolate tool execution in temp directory
-   - Restrict file access to sandbox paths
-   - Works without Docker (Windows + Linux)
-
-4. **Permissions** (Chapters 20-22)
-   - Block dangerous operations (delete, shell commands on sensitive paths)
-   - Audit log of all attempts
-   - Simulated approval for batch runs
-
-5. **Retry Logic** (Chapters 29-31)
-   - Retry transient failures (timeout, network)
-   - Track idempotency keys to prevent duplicates
-   - Exponential backoff
-
-6. **Verification** (Chapters 25-28)
-   - Independent end-state checks (files exist, tests pass)
-   - Don't trust agent's claim of completion
-   - Deterministic verification where possible
-
-## Installation
-
-### Requirements
-
-- Python 3.10+ (tested on 3.14)
-- Node.js 18+ (for web dashboard)
-- Windows 11 or Linux
-
-### Install
-
-```powershell
-# Windows PowerShell
-git clone <repo>
-cd harnessdiff
-
-# Install Python package
-pip install -e .
-
-# Install web dashboard dependencies
-cd web
-npm install
-cd ..
-```
-
-### Linux
+### Installation
 
 ```bash
-git clone <repo>
+# Clone or extract the repository
 cd harnessdiff
 
-# Install Python package
+# Install dependencies
 pip install -e .
 
-# Install web dashboard
-cd web
-npm install
-cd ..
+# Or with uv (recommended)
+uv pip install -e .
 ```
-
-## Usage
 
 ### Run Ablation Study
 
-This runs all tasks 7 times, adding one layer at a time:
+```bash
+# Run all tasks through ablation
+python3 harnessdiff/cli.py ablate
 
-```powershell
-# Windows
-harnessdiff ablate
-
-# Outputs to ./results/ablation_results.json
+# View results
+cat results/ablation_results.json
 ```
 
-### View Results
+### View Dashboard
 
-The ablation prints a summary table to the console. For interactive exploration:
+```bash
+# Copy results to web dashboard
+cp results/ablation_results.json web/public/
+cp results/*.jsonl web/public/
 
-```powershell
-# Build web dashboard (static export)
+# Build and serve static site
 cd web
+npm install
 npm run build
-
-# Serve the static site
 npx serve out
-# Open http://localhost:3000
 ```
 
-Or simply open `web/out/index.html` in your browser after building.
+Open http://localhost:3000 to see:
+- Ablation charts showing incremental improvements
+- Per-task success/failure details
+- **Side-by-side trace viewer** (click any task to see baseline vs full-harness execution step-by-step)
 
-### Run Individual Configurations
+## Latest Ablation Results
 
-```powershell
-# Before: no harness
-harnessdiff run --model mock
-
-# After: full harness
-harnessdiff after --model mock
-
-# List available tasks
-harnessdiff list-tasks
+```
+Configuration      Success Rate  False Claims Made  False Claims Caught  Unsafe Blocked
+Baseline (no harness)    50.0%                  5                    0               0
++ Tool Design            50.0%                  5                    0               0
++ Context                50.0%                  5                    0               0
++ Sandbox                41.7%                  6                    0               0
++ Permissions            41.7%                  6                    0               1
++ Retry                  66.7%                  3                    0               1
++ Verification           66.7%                  3                    3               1
 ```
 
-### Use Real LLMs (Optional)
-
-```powershell
-# OpenAI
-$env:OPENAI_API_KEY = "sk-..."
-harnessdiff ablate --model openai
-
-# Anthropic
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
-harnessdiff ablate --model anthropic
-```
-
-Default is `--model mock` (deterministic, offline, exhibits classic failures).
+**Key improvements:**
+- Real success rate: **50% → 67%** (+17%)
+- False claims: **5 → 3** (-2 unverified claims)
+- Unsafe actions: **0 attempted → 1 blocked** (protection active)
 
 ## Task Suite
 
-HarnessDiff includes 5 tasks with real end-state verification:
+12 tasks targeting specific failure modes:
 
-| Task | Description | Failure Mode | Verification |
-|------|-------------|--------------|--------------|
-| **file_creation** | Create file with content | Agent claims done without checking | File exists with correct content |
-| **flaky_tool** | Call tool that fails 2x then succeeds | Agent gives up after first failure | Tool succeeded after retries |
-| **dangerous_delete** | Clean up files (protect important data) | Agent deletes critical files | Important file still exists |
-| **overlapping_tools** | Search with 5 similar tool names | Agent picks wrong tool | Correct tool was used |
-| **duplicate_side_effect** | Create unique record (non-idempotent) | Retry creates duplicate | Exactly one record exists |
+| Task | Failure Mode | Fixed By |
+|------|--------------|----------|
+| `file_creation` | False completion claims | Verification |
+| `flaky_tool` | Transient failures | Retry |
+| `timeout_retry` | Timeout errors | Retry |
+| `duplicate_side_effect` | Duplicate side effects | Idempotency |
+| `dangerous_delete` | Unsafe deletions | Permissions |
+| `destructive_command` | Dangerous shell commands | Permissions |
+| `overlapping_tools` | Tool selection confusion | Tool Design |
+| `misleading_tools` | Ambiguous tool names | Tool Design |
+| `context_overflow` | Lost goals in large context | Context Management |
+| `oversized_output` | Verbose tool outputs | Tool Design |
+| `multi_step_verify` | Multi-step verification | Verification |
+| `out_of_workspace_write` | Unsafe file writes | Sandbox |
 
-Each task has deterministic setup, execution, and verification. No human judgment required.
-
-## Project Structure
+## Architecture
 
 ```
 harnessdiff/
-├── harnessdiff/           # Core Python package
-│   ├── agent_loop.py      # Main loop (Chapter 2)
-│   ├── models.py          # Mock + real LLM providers
-│   ├── config.py          # Harness configuration
-│   ├── runner.py          # Task execution + ablation
-│   ├── cli.py             # Command-line interface
-│   └── layers/            # Individual harness layers
-│       ├── tool_design.py
-│       ├── context_mgmt.py
-│       ├── sandbox.py
-│       ├── permissions.py
-│       ├── retry.py
-│       └── verification.py
-├── tasks/                 # Task suite
-│   ├── basic_tasks.py     # 5 tasks with verifiers
-│   └── __init__.py
-├── tests/                 # Pytest suite
-│   ├── test_agent_loop.py
-│   ├── test_layers.py
-│   ├── test_tasks.py
-│   └── test_models.py
-├── web/                   # Next.js dashboard
-│   ├── app/
-│   │   ├── page.tsx       # Main dashboard
-│   │   └── page.module.css
-│   └── package.json
-├── pyproject.toml
-├── LICENSE (MIT)
-└── README.md
+├── models.py           # Mock model + LLM providers (OpenAI, Anthropic)
+├── agent_loop.py       # Core agent loop with layer integration
+├── config.py           # Configuration for layer flags
+├── layers/             # 6 harness layers
+│   ├── tool_design.py
+│   ├── context_mgmt.py
+│   ├── sandbox.py
+│   ├── permissions.py
+│   ├── retry.py
+│   └── verification.py
+├── runner.py           # Task runner + ablation orchestrator
+├── cli.py              # CLI interface
+tasks/
+└── basic_tasks.py      # 12 deterministic tasks
+web/
+└── app/                # Next.js dashboard
 ```
 
-## Adding Components
-
-### Add a Task
-
-```python
-# tasks/my_task.py
-from tasks import Task
-from pathlib import Path
-
-class MyTask(Task):
-    @property
-    def task_id(self) -> str:
-        return "my_task"
-    
-    @property
-    def description(self) -> str:
-        return "What this task does"
-    
-    @property
-    def prompt(self) -> str:
-        return "Instructions for the agent"
-    
-    def setup(self, work_dir: Path):
-        # Return dict with "tools" and "tool_schemas"
-        ...
-    
-    def verify(self, context):
-        # Return dict with "success", "evidence"
-        ...
-```
-
-Register in `tasks/__init__.py`.
-
-### Add a Layer
-
-```python
-# harnessdiff/layers/my_layer.py
-class MyLayer:
-    def __init__(self, config):
-        self.config = config
-    
-    def wrap_tools(self, tools):
-        # Return wrapped tool dict
-        ...
-```
-
-Wire it into `agent_loop.py` `_apply_layers()`.
-
-### Add a Model Provider
-
-```python
-# harnessdiff/models.py
-class MyModel(ModelProvider):
-    def generate(self, messages, tools=None, temperature=0.7):
-        # Call your API
-        # Return Message(role="assistant", content=..., tool_calls=...)
-        ...
-    
-    def estimate_tokens(self, text):
-        return len(text) // 4
-```
-
-## Testing
+## Development
 
 ```bash
-# Run all tests
+# Run tests
 pytest
 
-# With coverage
-pytest --cov=harnessdiff --cov-report=html
+# Run specific task
+python3 harnessdiff/cli.py run file_creation
 
-# Run specific test file
-pytest tests/test_layers.py
+# Run with full harness
+python3 harnessdiff/cli.py after file_creation
+
+# List all tasks
+python3 harnessdiff/cli.py list-tasks
 ```
 
-Tests cover:
-- Agent loop execution
-- Each harness layer
-- Task setup and verification
-- Mock model determinism
+## Requirements
 
-## Conceptual Grounding
-
-HarnessDiff is built on principles from _Understanding Harness Engineering_:
-
-- **Chapter 2**: The minimal agent loop (context → model → action → observe → update)
-- **Chapters 5-10**: Tool design as interface problem, overlap creates selection difficulty
-- **Chapters 12-15**: Context selection, compaction is lossy, durable state ≠ active context
-- **Chapters 18-19**: Sandbox is isolation boundary, not orchestrator
-- **Chapters 20-22**: Approval ≠ containment, credentials outside execution
-- **Chapter 25**: Verification ≠ self-reported completion
-- **Chapters 29-31**: Recovery requires world state, idempotency matters
-- **Chapter 40**: Common failure modes (tool-selection, verification, authorization, retry, etc.)
-
-Each layer implementation cites relevant handbook chapters in code comments.
-
-## What's NOT Included
-
-This is a focused lab, not a production framework:
-
-- **No distributed execution** (Chapter 29 durability is optional)
-- **No subagent coordination** (Chapter 33)
-- **No MCP integration** (Chapter 11 — MCP is interop, not a complete loop)
-- **No prompt injection defenses** (Chapter 22 provenance)
-- **No real approval UI** (simulated batch approval only)
-
-See the handbook for production considerations.
-
-## Roadmap
-
-Potential extensions:
-
-- [ ] More tasks (code generation, API workflows, multi-step planning)
-- [ ] Checkpoint/resume layer (Chapter 29 long-running)
-- [ ] Subagent task (Chapter 33 coordination)
-- [ ] MCP tool backend option (Chapter 11)
-- [ ] Trace diff viewer (side-by-side before/after)
-- [ ] GitHub Actions CI file
-- [ ] Docker sandbox backend (optional, in addition to native)
-
-Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+- Python 3.10+
+- Node.js 18+ (for dashboard)
+- No Docker required
+- Works offline with mock model (default)
+- Optional: OpenAI or Anthropic API keys for real LLM testing
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+MIT
 
-## Credit
+## Citation
 
-Conceptual framework: [**"Understanding Harness Engineering"**](https://github.com/techNmak/understanding-harness-engineering) by [@techNmak](https://github.com/techNmak)
-
-Implementation: HarnessDiff contributors
+Based on *"Understanding Harness Engineering"* by @techNmak
 
 ---
 
-**Run `harnessdiff ablate` to see what the harness fixes.**
+**🔍 Key Insight**: The harness changes what the model sees → which changes what it does. This project makes those changes visible and measurable.

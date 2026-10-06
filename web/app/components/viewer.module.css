@@ -1,0 +1,159 @@
+.viewer {
+  margin: 2rem 0;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 2rem;
+}
+
+.header {
+  margin-bottom: 2rem;
+}
+
+.title {
+  font-size: 1.5rem;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.desc {
+  color: #999;
+  font-size: 0.9rem;
+}
+
+.results {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.resultBox {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.resultBox h4 {
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
+}
+
+.resultBox p {
+  font-size: 0.85rem;
+  color: #999;
+  margin: 0.25rem 0;
+}
+
+.traces {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.traceColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.columnTitle {
+  font-size: 1.1rem;
+  color: #fff;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #333;
+}
+
+.step {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.step:hover {
+  border-color: #555;
+  transform: translateX(2px);
+}
+
+.step.failure {
+  border-color: #f87171;
+  background: rgba(248, 113, 113, 0.05);
+}
+
+.step.intervention {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.05);
+}
+
+.stepHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.stepNum {
+  font-weight: 600;
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: #333;
+  color: #fbbf24;
+}
+
+.intervention .badge {
+  background: rgba(74, 222, 128, 0.2);
+  color: #4ade80;
+}
+
+.action {
+  font-size: 0.85rem;
+  color: #ccc;
+  margin-bottom: 0.5rem;
+}
+
+.action strong {
+  color: #999;
+  font-weight: 500;
+}
+
+.observation {
+  font-size: 0.85rem;
+  color: #999;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  margin-top: 0.5rem;
+}
+
+.observation strong {
+  color: #888;
+  font-weight: 500;
+}
+
+.layerNote {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(74, 222, 128, 0.1);
+  border-left: 3px solid #4ade80;
+  font-size: 0.8rem;
+  color: #4ade80;
+  border-radius: 4px;
+}
+
+@media (max-width: 768px) {
+  .results,
+  .traces {
+    grid-template-columns: 1fr;
+  }
+}
